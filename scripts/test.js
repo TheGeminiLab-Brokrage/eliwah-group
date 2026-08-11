@@ -1,0 +1,328 @@
+/* Checks the payment maths and the sheet parser. Run: node scripts/test.js
+ *
+ * The browser files are plain scripts sharing one global scope, so load them
+ * the same way the page does rather than as modules.
+ */
+const fs = require('fs');
+const path = require('path');
+
+const load = (...files) => {
+  const src = files.map((f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8')).join('\n;\n');
+  return new Function(`${src}
+    return { CONFIG, cfg: () => CONFIG, setProject, addMonths, SNAPSHOTS, parseCSV, normalizeRows, parseUnitCode, parseNumber,
+             buildSchedule, scheduleTotal, CLINIC_AREAS, CLINIC_HOTSPOTS, POLYGONS, CLINIC_PINS, PROJECTS, PLANS };`)();
+};
+
+const G = load('js/config.js', 'js/plan.js', 'js/data.js', 'js/sheet.js', 'js/engine.js');
+
+let pass = 0, fail = 0;
+const check = (name, cond, detail = '') => {
+  if (cond) { pass++; }
+  else { fail++; console.log(`  FAIL  ${name}${detail ? ' — ' + detail : ''}`); }
+};
+
+/* ---- geometry ---------------------------------------------------------- */
+console.log('\nFloor plan');
+check('34 clinic hotspots', Object.keys(G.POLYGONS).length === 34, `got ${Object.keys(G.POLYGONS).length}`);
+check('clinic numbers are 1..34',
+  [...Array(34)].every((_, i) => G.POLYGONS[i + 1]),
+  'missing: ' + [...Array(34)].map((_, i) => i + 1).filter((n) => !G.POLYGONS[n]).join(','));
+for (const [n, h] of Object.entries(G.CLINIC_HOTSPOTS)) {
+  check(`clinic ${n} inside the image`,
+    h.points.every(([x, y]) => x >= 0 && x <= 1 && y >= 0 && y <= 1));
+}
+/* Pins are what the agent actually clicks, so each one must sit inside its own
+ * room — a centroid that escapes the polygon would put the pin in a neighbour. */
+const pointInPolygon = ([x, y], pts) => {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i], [xj, yj] = pts[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+};
+check('34 pins', Object.keys(G.CLINIC_PINS).length === 34);
+for (const [n, pin] of Object.entries(G.CLINIC_PINS)) {
+  check(`clinic ${n} pin sits inside its room`, pointInPolygon([pin.x, pin.y], G.POLYGONS[n]));
+}
+// And no two pins should collide at the on-screen radius (17 + a little slack).
+const pins = Object.values(G.CLINIC_PINS);
+for (let i = 0; i < pins.length; i++) {
+  for (let j = i + 1; j < pins.length; j++) {
+    const d = Math.hypot(pins[i].x - pins[j].x, pins[i].y - pins[j].y);
+    check(`pins ${pins[i].n} and ${pins[j].n} do not overlap`, d > 36, `${d.toFixed(0)}px apart`);
+  }
+}
+
+/* every registered building */
+console.log('\nAll plans');
+for (const [key, plan] of Object.entries(G.PLANS)) {
+  const nums = Object.keys(plan.pins).map(Number).sort((a, b) => a - b);
+  check(`${key}: pins are numbered 1..n with no gaps`,
+    nums.every((n, i) => n === i + 1), `got ${nums.join(',')}`);
+  check(`${key}: every pin has an area`, nums.every((n) => plan.areas[n] > 0));
+  check(`${key}: every pin is inside the image`,
+    Object.values(plan.pins).every((p) => p.x >= 0 && p.x <= plan.refW && p.y >= 0 && p.y <= plan.refH));
+  // Pins must not collide at the radius they are actually drawn at.
+  const ps = Object.values(plan.pins);
+  let closest = Infinity;
+  for (let i = 0; i < ps.length; i++) {
+    for (let j = i + 1; j < ps.length; j++) {
+      closest = Math.min(closest, Math.hypot(ps[i].x - ps[j].x, ps[i].y - ps[j].y));
+    }
+  }
+  check(`${key}: no two pins overlap at r=${plan.pinR}`, closest > plan.pinR * 2,
+    `closest pair is ${closest.toFixed(0)}px apart`);
+  console.log(`  ${key}: ${nums.length} rooms, closest pins ${closest.toFixed(0)}px, r=${plan.pinR}`);
+}
+
+check('plan areas sum to the drawing total',
+  Object.values(G.CLINIC_AREAS).reduce((a, b) => a + b, 0) === 872,
+  `got ${Object.values(G.CLINIC_AREAS).reduce((a, b) => a + b, 0)}`);
+
+/* ---- per-project PDF content --------------------------------------------
+ *
+ * The 9MC offer once printed EMC's description, EMC's renders and a map of New
+ * Cairo — the wrong city — because that content was hardcoded in pdf.js. It now
+ * lives per project in config.js, so guard the thing that actually went wrong:
+ * no live project may be missing its own content, and no two may share an asset.
+ */
+console.log('\nProject content');
+const liveProjects = G.PROJECTS.filter((p) => p.live);
+for (const p of liveProjects) {
+  check(`${p.id}: has a location that isn't a placeholder`,
+    !!p.location && p.location !== 'Eliwah Group', `got "${p.location}"`);
+  check(`${p.id}: has its own project description`, !!(p.story && p.story.text));
+  check(`${p.id}: description mentions the project or its city, not another's`,
+    !!p.story && (p.story.text.includes(p.name) || p.story.text.includes(p.location.split(',')[0])
+      || !liveProjects.some((q) => q.id !== p.id && p.story.text.includes(q.name))),
+    p.story && p.story.text.slice(0, 60));
+  check(`${p.id}: has key advantages`, !!(p.story && p.story.advantages && p.story.advantages.length));
+  check(`${p.id}: has at least one render`, !!(p.story && p.story.renders && p.story.renders.length));
+  check(`${p.id}: has a location map`, !!(p.place && p.place.map));
+  check(`${p.id}: has a location heading`, !!(p.place && p.place.heading));
+  check(`${p.id}: has contact details`, !!(p.contact && p.contact.web));
+}
+
+/* Every image path any project prints, checked for cross-project reuse. */
+const assetsOf = (p) => [
+  p.heroImage, p.planPrint, p.card, p.place && p.place.map,
+  ...((p.story && p.story.renders) || []),
+].filter(Boolean);
+
+for (const p of liveProjects) {
+  for (const q of liveProjects) {
+    if (p.id >= q.id) continue;
+    const shared = assetsOf(p).filter((a) => assetsOf(q).includes(a));
+    check(`${p.id} and ${q.id} share no images`, shared.length === 0, shared.join(', '));
+  }
+}
+
+/* And every one of those files must exist, or the page silently prints
+ * "unavailable" in front of a customer. */
+for (const p of liveProjects) {
+  for (const a of assetsOf(p)) {
+    check(`${p.id}: ${a} exists`, fs.existsSync(path.join(__dirname, '..', a)));
+  }
+}
+
+/* Brand artwork, built by scripts/make-brand.js. The PDF degrades to type if
+ * these are missing, so the failure is quiet — check for it here instead. */
+const BRAND_FILES = [
+  'assets/logo-eliwah.png', 'assets/logo-eliwah-dark.png', 'assets/logo-mark.png',
+  'assets/icons/icon-512.png', 'assets/icons/icon-192.png', 'assets/icons/icon-180.png',
+  'site.webmanifest',
+];
+for (const f of BRAND_FILES) {
+  check(`brand asset ${f} exists`, fs.existsSync(path.join(__dirname, '..', f)));
+}
+/* A logo the cover crop would slice in half is worse than no logo. The card
+ * render has Eliwah's own branding baked into its corners, so it must not be
+ * reused as the PDF hero, which gets cropped to a 2.28 aspect. */
+for (const p of liveProjects) {
+  check(`${p.id}: PDF hero is not the branded card render`,
+    p.heroImage !== p.card || !/projects\//.test(String(p.card)),
+    `hero and card are both ${p.heroImage}`);
+}
+
+/* ---- sheet parsing ------------------------------------------------------ */
+console.log('\nSheet parsing');
+const snapshotRows = G.parseCSV(G.SNAPSHOTS.emc.csv);
+const { units, warnings } = G.normalizeRows(snapshotRows, G.CLINIC_AREAS);
+// Compare against the CSV itself rather than a hardcoded count, so the suite
+// doesn't break every time the ops team adds or sells a unit.
+check('every data row parsed into a unit', units.length === snapshotRows.length - 1,
+  `${units.length} units from ${snapshotRows.length - 1} rows`);
+check('no parser warnings', warnings.length === 0, warnings.join(' | '));
+check('all units are floor 3', units.every((u) => u.floor === 3));
+check('every unit has a known state',
+  units.every((u) => ['available', 'reserved', 'sold'].includes(u.state)));
+const mix = units.reduce((m, u) => ({ ...m, [u.state]: (m[u.state] || 0) + 1 }), {});
+console.log(`  snapshot mix: ${Object.entries(mix).map(([k, v]) => `${v} ${k}`).join(', ')}`);
+check('C313 -> clinic 13', G.parseUnitCode('C313').clinic === 13);
+check('C301 -> clinic 1', G.parseUnitCode('C301').clinic === 1);
+check('C234 -> floor 2, clinic 34', G.parseUnitCode('C234').floor === 2 && G.parseUnitCode('C234').clinic === 34);
+check('junk code rejected', G.parseUnitCode('HELLO') === null);
+check('"125,000.00" -> 125000', G.parseNumber('125,000.00') === 125000);
+check('area matches the drawing for every unit',
+  units.every((u) => u.area === G.CLINIC_AREAS[u.clinic]),
+  units.filter((u) => u.area !== G.CLINIC_AREAS[u.clinic]).map((u) => u.code).join(','));
+check('price = area x meter price for every unit',
+  units.every((u) => Math.abs(u.area * u.meterPrice - u.price) < 1));
+
+/* 9MC parses against its own building, and the area cross-check earns its keep.
+ *
+ * Deliberately parsed with EMC active, i.e. with no hold list applied, so this
+ * exercises the raw sheet-vs-drawing check. The block below re-parses under
+ * 9MC's own config, where MC922 is held and the warning is suppressed instead. */
+G.setProject('emc');
+console.log('\n9MC sheet (no hold list applied)');
+const mc9 = G.PLANS.mc9;
+const mc9Rows = G.parseCSV(G.SNAPSHOTS.mc9.csv);
+const r9 = G.normalizeRows(mc9Rows, mc9.areas);
+check('9MC rows all parsed', r9.units.length === mc9Rows.length - 1,
+  `${r9.units.length} of ${mc9Rows.length - 1}`);
+check('9MC codes resolve to floor 9', r9.units.every((u) => u.floor === 9));
+check('MC915 -> floor 9, clinic 15',
+  G.parseUnitCode('MC915').clinic === 15 && G.parseUnitCode('MC915').floor === 9);
+check('9MC prices foot to area x meter price',
+  r9.units.every((u) => Math.abs(u.area * u.meterPrice - u.price) < 1));
+check('every 9MC clinic number exists on the plan',
+  r9.units.every((u) => mc9.pins[u.clinic]),
+  r9.units.filter((u) => !mc9.pins[u.clinic]).map((u) => u.code).join(','));
+// MC922 is 23 m² in the sheet but 19 m² on the drawing — the checker must say so.
+check('the MC922 area mismatch is reported',
+  r9.warnings.some((w) => w.includes('MC922') && w.includes('19')),
+  r9.warnings.join(' | ') || 'no warnings raised');
+console.log(`  9MC warnings: ${r9.warnings.length ? r9.warnings.join(' | ') : 'none'}`);
+
+/* ---- 9MC payment plans, held units and calendar dates ------------------- */
+console.log('\n9MC payment plans');
+G.setProject('mc9');
+const C9 = G.cfg();
+const r9b = G.normalizeRows(G.parseCSV(G.SNAPSHOTS.mc9.csv), G.PLANS.mc9.areas);
+const u9 = r9b.units.find((u) => u.code === 'MC924');   // 80 m², 6,400,000
+const CONTRACT = new Date(2026, 7, 11);                 // 11 Aug 2026
+
+/* MC922: the sheet says 23 m², the drawing says 19 m². config.js resolves that
+ * in favour of the drawing and keeps the sheet's total price, so the meter
+ * price has to be re-derived or the offer would not foot. */
+const mc922 = r9b.units.find((u) => u.code === 'MC922');
+check('MC922 is no longer held', mc922.state === 'available', `state is ${mc922.state}`);
+check('MC922 uses the drawing area, not the sheet\'s', mc922.area === 19, `got ${mc922.area}`);
+check('MC922 keeps the sheet price', mc922.price === 1840000, `got ${mc922.price}`);
+check('MC922 meter price is re-derived from the price',
+  Math.abs(mc922.area * mc922.meterPrice - mc922.price) < 1,
+  `${mc922.area} × ${mc922.meterPrice} = ${mc922.area * mc922.meterPrice}`);
+check('the correction is recorded so the agent sees it',
+  r9b.warnings.some((w) => w.includes('MC922') && w.includes('19')));
+check('the corrected area no longer trips the drawing check',
+  !r9b.warnings.some((w) => w.includes('MC922') && w.includes('floor plan says')));
+check('no 9MC unit is on hold', r9b.units.filter((u) => u.state === 'held').length === 0);
+check('MC922 can be offered', r9b.units.filter((u) => u.state === 'available').some((u) => u.code === 'MC922'));
+
+check('9MC delivers in 3.5 years', C9.deliveryMonths === 42, `got ${C9.deliveryMonths}`);
+check('9MC maintenance falls one year before delivery',
+  C9.maintenanceDueMonth === C9.deliveryMonths - 12, `${C9.maintenanceDueMonth} vs ${C9.deliveryMonths - 12}`);
+
+const expected = { dp7: [0.07, 7], dp10: [0.10, 8], dp15: [0.15, 9], dp20: [0.20, 10] };
+for (const plan of C9.plans) {
+  const [pct, years] = expected[plan.id];
+  const { rows, summary } = G.buildSchedule(u9, plan, CONTRACT);
+  const inst = rows.filter((r) => r.instalment);
+  const down = rows.filter((r) => r.down);
+
+  check(`${plan.id}: ${pct * 100}% down`, summary.downPayment === Math.round(u9.price * pct));
+  check(`${plan.id}: ${years * 4} quarterly instalments`, inst.length === years * 4, `got ${inst.length}`);
+  check(`${plan.id}: down + instalments = price`,
+    summary.downPayment + inst.reduce((s, r) => s + r.amount, 0) === u9.price);
+  check(`${plan.id}: rows sum to total payable`,
+    G.scheduleTotal(rows) === summary.totalPayable);
+
+  // Dates: contract, then every 3 months.
+  check(`${plan.id}: first payment is on the contract date`,
+    rows[0].date.getTime() === CONTRACT.getTime());
+  check(`${plan.id}: instalments fall every 3 months from contract`,
+    inst.every((r, i) => r.date.getTime() === G.addMonths(CONTRACT, (i + 1) * 3).getTime()));
+  check(`${plan.id}: maintenance at month 30`,
+    rows.some((r) => r.month === 30 && r.label.startsWith('Maintenance')));
+
+  if (plan.id === 'dp20') {
+    check('dp20: down payment comes in two parts', down.length === 2, `got ${down.length}`);
+    check('dp20: 10% on contract', down[0].amount === Math.round(u9.price * 0.10));
+    check('dp20: 10% one year later', down[1].amount === Math.round(u9.price * 0.10));
+    check('dp20: second part is dated exactly one year on',
+      down[1].date.getTime() === G.addMonths(CONTRACT, 12).getTime());
+  } else {
+    check(`${plan.id}: single down payment`, down.length === 1);
+  }
+}
+
+console.log('\nDate handling');
+check('month-end clamps (31 Jan + 1 month -> 28 Feb 2027)',
+  G.addMonths(new Date(2027, 0, 31), 1).getTime() === new Date(2027, 1, 28).getTime());
+check('leap year (31 Jan + 1 month -> 29 Feb 2028)',
+  G.addMonths(new Date(2028, 0, 31), 1).getTime() === new Date(2028, 1, 29).getTime());
+check('30 Nov + 3 months -> 28 Feb',
+  G.addMonths(new Date(2026, 10, 30), 3).getTime() === new Date(2027, 1, 28).getTime());
+check('quarterly steps stay on the same day of month',
+  G.addMonths(new Date(2026, 7, 11), 3).getDate() === 11);
+
+G.setProject('emc');   // leave the harness on EMC for anything after this
+
+/* fail-closed behaviour */
+const hdr = 'PROJECT,Type,Floor,Unit Code,Indoor area,Indoor meter price,Total unit price,Status\n';
+const one = (status) => G.normalizeRows(G.parseCSV(hdr + `EMC,CLINIC,Third,C313,27,"125,000.00","3,375,000.00",${status}`), G.CLINIC_AREAS).units[0];
+console.log('\nStatus handling');
+check('"Available" -> available', one('Available').state === 'available');
+check('" available " -> available', one('" available "').state === 'available');
+check('"AVAILABLE" -> available', one('AVAILABLE').state === 'available');
+check('"Sold" -> sold', one('Sold').state === 'sold');
+check('"Reserved" -> reserved', one('Reserved').state === 'reserved');
+check('unknown status is NOT available', one('Whatever').state === 'sold');
+check('blank status is NOT available', one('').state === 'sold');
+
+/* ---- payment maths ------------------------------------------------------ */
+console.log('\nPayment schedules');
+for (const unit of units) {
+  for (const plan of G.CONFIG.plans) {
+    const { rows, summary } = G.buildSchedule(unit, plan);
+    const total = G.scheduleTotal(rows);
+    check(`${unit.code} / ${plan.id}: rows sum to total payable`,
+      total === summary.totalPayable, `${total} vs ${summary.totalPayable}`);
+    check(`${unit.code} / ${plan.id}: no negative or zero payments`,
+      rows.every((r) => r.amount > 0));
+
+    if (plan.cash) {
+      check(`${unit.code} / cash: 35% off`, summary.netPrice === Math.round(unit.price * 0.65));
+      check(`${unit.code} / cash: maintenance on ORIGINAL price`,
+        summary.maintenance === Math.round(unit.price * 0.10));
+    } else {
+      const instalments = rows.filter((r) => r.instalment);
+      check(`${unit.code} / ${plan.id}: ${plan.years * 4} quarterly instalments`,
+        instalments.length === plan.years * 4, `got ${instalments.length}`);
+      check(`${unit.code} / ${plan.id}: down + instalments = price`,
+        summary.downPayment + instalments.reduce((s, r) => s + r.amount, 0) === unit.price);
+      check(`${unit.code} / ${plan.id}: last instalment absorbs rounding`,
+        Math.abs(instalments.at(-1).amount - summary.instalmentAmount) < instalments.length);
+      check(`${unit.code} / ${plan.id}: instalments every 3 months`,
+        instalments.every((r, i) => r.month === (i + 1) * 3));
+    }
+    check(`${unit.code} / ${plan.id}: maintenance at month 18`,
+      rows.some((r) => r.month === 18 && r.label.startsWith('Maintenance')));
+  }
+}
+
+/* worked example, printed so it can be eyeballed against a real offer */
+const sample = units.find((u) => u.code === 'C313');
+const plan = G.CONFIG.plans.find((p) => p.id === 'dp10');
+const { summary } = G.buildSchedule(sample, plan);
+console.log(`\nWorked example — C313, ${plan.label}`);
+console.log(`  unit price      ${summary.originalPrice.toLocaleString()}`);
+console.log(`  down payment    ${summary.downPayment.toLocaleString()}  (10%)`);
+console.log(`  ${summary.instalmentCount} quarterly x  ${summary.instalmentAmount.toLocaleString()}  over ${summary.years} years`);
+console.log(`  maintenance     ${summary.maintenance.toLocaleString()}  (10%, month 18)`);
+console.log(`  total payable   ${summary.totalPayable.toLocaleString()}`);
+
+console.log(`\n${pass} passed, ${fail} failed\n`);
+process.exit(fail ? 1 : 0);

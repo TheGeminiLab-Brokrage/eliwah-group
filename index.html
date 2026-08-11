@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eliwah Group — Offer Generator</title>
+
+<!-- Installable: the sales team adds this to the phone home screen and it
+     opens full-screen, without the browser chrome eating half the plan. -->
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#0b7e99">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Eliwah Offers">
+<!-- iOS ignores the manifest icons and reads this instead. -->
+<link rel="apple-touch-icon" href="assets/icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
+
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header>
+  <div class="head-in">
+    <img class="mark" src="assets/logo-eliwah.png" alt="Eliwah Group" width="457" height="260">
+    <div>
+      <div class="head-title" id="headTitle">Offer Generator</div>
+      <div class="head-sub" id="headSub">Select a project to begin</div>
+    </div>
+    <div class="head-spacer"></div>
+    <div class="sync" id="sync">
+      <span class="dot"></span>
+      <span id="syncText">Loading inventory&hellip;</span>
+      <button id="refresh" disabled>Refresh</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div id="warnings" class="banner hidden"></div>
+
+  <section class="step">
+    <div class="step-head">
+      <span class="step-num">1</span>
+      <h2>Choose a project</h2>
+      <span class="step-hint">Pick the project you want to check inventory for.</span>
+    </div>
+    <div class="projects" id="projects"></div>
+  </section>
+
+  <section class="step hidden" id="floorStep">
+    <div class="step-head">
+      <span class="step-num">2</span>
+      <h2>Choose a floor</h2>
+      <span class="step-hint" id="floorHint"></span>
+    </div>
+    <div class="floors" id="floors"></div>
+  </section>
+
+  <section class="step hidden" id="planStep">
+    <div class="step-head">
+      <span class="step-num">3</span>
+      <h2>Choose a clinic</h2>
+      <span class="step-hint">Click a green pin on the plan, or pick from the list.</span>
+    </div>
+    <div class="plan-grid">
+      <div>
+        <div class="plan-wrap" id="planWrap">
+          <img id="planImg" alt="Floor plan">
+          <svg id="planSvg" viewBox="0 0 1461 1169" preserveAspectRatio="xMidYMid meet"></svg>
+          <div class="pop" id="pop"></div>
+        </div>
+        <div class="legend">
+          <span><i style="background:#1f9d63;border-radius:50%"></i>Available</span>
+          <span><i style="background:#e8ab00;border-radius:50%"></i>Reserved</span>
+          <span><i style="background:#d13c33;border-radius:50%"></i>Sold</span>
+          <span><i style="background:#c3ced6;border-radius:50%"></i>Not released</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="units-head">
+          <span class="units-count" id="unitsCount"></span>
+          <select id="sortBy" aria-label="Sort clinics">
+            <option value="clinic">Clinic no.</option>
+            <option value="price">Price: low to high</option>
+            <option value="priceDesc">Price: high to low</option>
+            <option value="area">Area: small to large</option>
+            <option value="areaDesc">Area: large to small</option>
+          </select>
+        </div>
+        <div class="units" id="units"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="step hidden" id="detailStep">
+    <div class="step-head">
+      <span class="step-num">4</span>
+      <h2>Payment plan</h2>
+      <span class="step-hint">Instalments are quarterly.</span>
+    </div>
+    <div class="card detail">
+      <div class="detail-top" id="detailTop"></div>
+      <div class="plans" id="plans"></div>
+      <div class="sched-cards" id="schedCards"></div>
+      <div class="sched-note" id="schedNote"></div>
+      <div class="sched-wrap"><table id="sched"></table></div>
+      <div class="actions">
+        <!-- Shown only where the browser can actually put a file in the share
+             sheet; app.js unhides it and demotes Download to secondary. -->
+        <button class="btn hidden" id="share">Send on WhatsApp</button>
+        <button class="btn" id="download">Download PDF offer</button>
+        <span class="note" id="downloadNote"></span>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/plan.js"></script>
+<script src="js/data.js"></script>
+<script src="js/sheet.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

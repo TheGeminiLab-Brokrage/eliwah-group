@@ -1,0 +1,8 @@
+# Keep text files LF in the repository, checked out however the OS prefers.
+* text=auto eol=lf
+
+# Binary assets — never touch these.
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.pdf binary
