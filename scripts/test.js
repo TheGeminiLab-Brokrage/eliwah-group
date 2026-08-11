@@ -136,6 +136,26 @@ const BRAND_FILES = [
 for (const f of BRAND_FILES) {
   check(`brand asset ${f} exists`, fs.existsSync(path.join(__dirname, '..', f)));
 }
+
+/* The service worker's precache list is a hand-written array of paths, so it
+ * drifts the moment a file is renamed — and a wrong entry fails silently,
+ * leaving the app with no offline support. Check every entry resolves, and that
+ * the worker still refuses to touch anything off-origin. */
+const swSrc = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
+const shell = (/const SHELL = \[([^\]]+)\]/.exec(swSrc) || [, ''])[1]
+  .split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+check('the service worker declares a shell to precache', shell.length > 5, `got ${shell.length}`);
+for (const entry of shell) {
+  if (entry === './') continue;
+  check(`sw precaches a real file: ${entry}`, fs.existsSync(path.join(__dirname, '..', entry)));
+}
+check('the service worker never intercepts off-origin requests',
+  /url\.origin !== self\.location\.origin\) return;/.test(swSrc));
+check('every script index.html loads is in the service worker shell',
+  (fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8')
+    .match(/<script src="([^"]+)"/g) || [])
+    .map((s) => /"([^"]+)"/.exec(s)[1])
+    .every((src) => shell.includes(src)));
 /* A logo the cover crop would slice in half is worse than no logo. The card
  * render has Eliwah's own branding baked into its corners, so it must not be
  * reused as the PDF hero, which gets cropped to a 2.28 aspect. */

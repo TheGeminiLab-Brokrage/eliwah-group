@@ -602,6 +602,18 @@ if (SHARE_FILES) {
 $('share').onclick = () => issueOffer(true);
 $('download').onclick = () => issueOffer(false);
 
+/* Offline support and installability. Registered late and failure-tolerant:
+ * a service worker is a bonus, never a requirement, and it is unavailable on
+ * file:// and on plain http:// beyond localhost.
+ *
+ * It never caches the inventory sheet — see the note at the top of sw.js. */
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js')
+      .catch((err) => console.warn('service worker not registered:', err.message));
+  });
+}
+
 /* ---------------- boot ---------------- */
 renderProjects();
 if (location.hash) {
