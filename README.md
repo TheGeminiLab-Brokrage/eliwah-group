@@ -33,10 +33,13 @@ image or if a live project is missing its own content.
 
 | Project | Plans |
 |---|---|
-| EMC | 10%/7yr · 15%/8yr · 20%/9yr · 25%/10yr · Cash (35% off) |
-| 9MC | 7%/7yr · 10%/8yr · 15%/9yr · **20%/10yr split 10% on contract + 10% after one year** |
+| EMC | 10%/7yr · 15%/8yr · 20%/9yr · 25%/10yr · Cash (**25%** off) |
+| 9MC | 7%/7yr · 10%/8yr · 15%/9yr · **20%/10yr split 10% on contract + 10% after one year** · Cash (**30%** off) |
 
-Instalments are quarterly for both. 9MC has no cash option — none was supplied.
+Instalments are quarterly for both. The cash discount differs per project, and
+either way maintenance is charged on the **original** price, not the discounted
+one. The two rates are pinned by name in `scripts/test.js`, so changing one in
+`js/config.js` without meaning to will fail the suite.
 
 ### Delivery and maintenance
 
@@ -59,9 +62,9 @@ The app and page 6 of the PDF show the same thing: four headline cards (contract
 price, down payment, quarterly instalment, total payable) over a table grouped
 into **year blocks** — `Year | Installment | Date | Amount | % | Yearly %`.
 
-Percentages are shares of the **original** unit price. On a cash plan that makes
-the payment read 65% and maintenance 10%, matching how they were quoted, instead
-of measuring both against the discounted price.
+Percentages are shares of the **original** unit price. On a 9MC cash plan that
+makes the payment read 70% and maintenance 10%, matching how they were quoted,
+instead of measuring both against the discounted price.
 
 ### Dates
 
@@ -259,7 +262,7 @@ need their floor plans dropped into `assets/` and referenced in `CONFIG.floors`.
 ## Payment maths — assumptions on record
 
 Terms given by Eliwah Group: four plans (10%/7yr, 15%/8yr, 20%/9yr, 25%/10yr),
-quarterly instalments, 35% cash discount, 10% maintenance one year before a
+quarterly instalments, a 25% cash discount, 10% maintenance one year before a
 30-month delivery. The schedule is checked by `scripts/test.js` — every plan for
 every unit sums exactly, with no drift.
 
@@ -297,7 +300,7 @@ reservation form turns up later, check it against these five points first.
 ## Scripts
 
 ```
-node scripts/test.js                        # 1298 checks: geometry, pins, parser,
+node scripts/test.js                        # 1308 checks: geometry, pins, parser,
                                             # status, dates, schedules, and that
                                             # each project has its own PDF content
 node scripts/test-pdf.js mc9 MC924 dp20     # render a real PDF outside the browser

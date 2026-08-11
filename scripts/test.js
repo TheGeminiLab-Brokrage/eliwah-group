@@ -332,7 +332,8 @@ check('9MC maintenance falls one year before delivery',
   C9.maintenanceDueMonth === C9.deliveryMonths - 12, `${C9.maintenanceDueMonth} vs ${C9.deliveryMonths - 12}`);
 
 const expected = { dp7: [0.07, 7], dp10: [0.10, 8], dp15: [0.15, 9], dp20: [0.20, 10] };
-for (const plan of C9.plans) {
+// Cash has no down payment or term, so it is checked separately below.
+for (const plan of C9.plans.filter((p) => !p.cash)) {
   const [pct, years] = expected[plan.id];
   const { rows, summary } = G.buildSchedule(u9, plan, CONTRACT);
   const inst = rows.filter((r) => r.instalment);
@@ -362,6 +363,37 @@ for (const plan of C9.plans) {
   } else {
     check(`${plan.id}: single down payment`, down.length === 1);
   }
+}
+
+/* Cash, both projects. The rates differ per project and are money on the
+ * customer's PDF, so they are pinned here deliberately — if someone edits
+ * config.js, this is the test that should stop them. */
+console.log('\nCash plans');
+const CASH_RATES = { emc: 0.25, mc9: 0.30 };
+for (const [id, rate] of Object.entries(CASH_RATES)) {
+  const proj = G.PROJECTS.find((p) => p.id === id);
+  const cash = proj.plans.find((p) => p.cash);
+  check(`${id}: has a cash option`, !!cash);
+  check(`${id}: cash discount is ${rate * 100}%`, cash && cash.discount === rate,
+    cash ? `got ${cash.discount * 100}%` : 'no cash plan');
+}
+{
+  G.setProject('mc9');
+  const cash9 = G.cfg().plans.find((p) => p.cash);
+  const { rows, summary } = G.buildSchedule(u9, cash9, CONTRACT);
+  check('9MC cash: price is 70% of list',
+    summary.netPrice === Math.round(u9.price * 0.70), `got ${summary.netPrice}`);
+  check('9MC cash: saving is 30% of list',
+    summary.discount === Math.round(u9.price * 0.30));
+  check('9MC cash: maintenance is on the ORIGINAL price, not the discounted one',
+    summary.maintenance === Math.round(u9.price * G.cfg().maintenanceRate));
+  check('9MC cash: just the payment and the maintenance', rows.length === 2, `got ${rows.length} rows`);
+  check('9MC cash: rows sum to total payable', G.scheduleTotal(rows) === summary.totalPayable);
+  check('9MC cash: maintenance still falls at month 30',
+    rows.some((r) => r.month === 30 && r.label.startsWith('Maintenance')));
+  console.log(`  9MC cash on ${u9.code}: ${summary.netPrice.toLocaleString()} `
+    + `(saves ${summary.discount.toLocaleString()}) + ${summary.maintenance.toLocaleString()} maintenance`);
+  G.setProject('emc');
 }
 
 console.log('\nDate handling');
@@ -400,7 +432,12 @@ for (const unit of units) {
       rows.every((r) => r.amount > 0));
 
     if (plan.cash) {
-      check(`${unit.code} / cash: 35% off`, summary.netPrice === Math.round(unit.price * 0.65));
+      // Read the rate from the plan rather than pinning a number here: the
+      // discount is a commercial term that changes, and a test that hardcodes it
+      // fails for the wrong reason when it does.
+      check(`${unit.code} / cash: ${plan.discount * 100}% off`,
+        summary.netPrice === Math.round(unit.price * (1 - plan.discount)),
+        `${summary.netPrice} vs ${Math.round(unit.price * (1 - plan.discount))}`);
       check(`${unit.code} / cash: maintenance on ORIGINAL price`,
         summary.maintenance === Math.round(unit.price * 0.10));
     } else {

@@ -118,7 +118,7 @@ const PROJECTS = [
       { id: 'dp15', label: '15% Down Payment', down: 0.15, years: 8 },
       { id: 'dp20', label: '20% Down Payment', down: 0.20, years: 9 },
       { id: 'dp25', label: '25% Down Payment', down: 0.25, years: 10 },
-      { id: 'cash', label: 'Cash', cash: true, discount: 0.35 },
+      { id: 'cash', label: 'Cash', cash: true, discount: 0.25 },
     ],
   },
 
@@ -212,6 +212,7 @@ const PROJECTS = [
           { pct: 0.10, month: 12, label: 'Second payment (10%)' },
         ],
         blurb: '10% on contract + 10% after one year, rest over 10 years' },
+      { id: 'cash', label: 'Cash', cash: true, discount: 0.30 },
     ],
 
     /* Units withheld from sale regardless of what the sheet says. They still
