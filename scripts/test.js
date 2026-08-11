@@ -10,7 +10,7 @@ const load = (...files) => {
   const src = files.map((f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8')).join('\n;\n');
   return new Function(`${src}
     return { CONFIG, cfg: () => CONFIG, setProject, addMonths, SNAPSHOTS, parseCSV, normalizeRows, parseUnitCode, parseNumber,
-             buildSchedule, scheduleTotal, CLINIC_AREAS, CLINIC_HOTSPOTS, POLYGONS, CLINIC_PINS, PROJECTS, PLANS };`)();
+             buildSchedule, scheduleTotal, CLINIC_AREAS, CLINIC_HOTSPOTS, POLYGONS, CLINIC_PINS, PROJECTS, PLANS, floorOrdinal };`)();
 };
 
 const G = load('js/config.js', 'js/plan.js', 'js/data.js', 'js/sheet.js', 'js/engine.js');
@@ -165,6 +165,66 @@ for (const p of liveProjects) {
     `hero and card are both ${p.heroImage}`);
 }
 
+/* ---- handover: can operations open a floor without a developer? ----------
+ *
+ * The whole point of the live sheet is that adding a row is enough. That only
+ * holds if the floor is declared with a drawing and the clinic number exists in
+ * the pin registry, so assert both for every floor the codes can reach. */
+console.log('\nFloors operations can open unaided');
+const ORDINALS = ['ground', 'first', 'second', 'third', 'fourth', 'fifth',
+  'sixth', 'seventh', 'eighth', 'ninth', 'tenth'];
+
+for (const p of liveProjects) {
+  const plan = G.PLANS[p.planKey];
+  const rooms = Object.keys(plan.pins).map(Number);
+  const clinicFloors = p.floors.filter((f) => f.use === 'Medical');
+
+  check(`${p.id}: every medical floor has a drawing`,
+    clinicFloors.every((f) => !!f.plan),
+    clinicFloors.filter((f) => !f.plan).map((f) => f.key).join(', ') || '');
+  check(`${p.id}: every floor key is a known ordinal`,
+    p.floors.every((f) => ORDINALS.includes(f.key.toLowerCase())),
+    p.floors.filter((f) => !ORDINALS.includes(f.key.toLowerCase())).map((f) => f.key).join(', '));
+  check(`${p.id}: floor keys are unique`,
+    new Set(p.floors.map((f) => f.key)).size === p.floors.length);
+
+  /* A unit code carries its own floor digit, so simulate a row on each declared
+   * floor for the first and last room and confirm it comes out sellable. */
+  const prefix = p.id === 'emc' ? 'C' : 'MC';
+  const HDR = 'PROJECT,Type,Floor,Unit Code,Indoor area,Indoor meter price,Total unit price,Status\n';
+  for (const f of clinicFloors) {
+    const digit = ORDINALS.indexOf(f.key.toLowerCase());
+    for (const room of [Math.min(...rooms), Math.max(...rooms)]) {
+      const code = `${prefix}${digit}${String(room).padStart(2, '0')}`;
+      const area = plan.areas[room];
+      const csv = `${HDR}X,CLINIC,${f.key},${code},${area},"80,000.00","${area * 80000}",Available`;
+      const { units: u } = G.normalizeRows(G.parseCSV(csv), plan.areas);
+      check(`${p.id}: a new row for ${code} (${f.label}) becomes sellable`,
+        u.length === 1 && u[0].state === 'available' && u[0].floor === digit && !!plan.pins[u[0].clinic],
+        u.length ? `state=${u[0].state} floor=${u[0].floor} pin=${!!plan.pins[u[0].clinic]}` : 'skipped');
+    }
+  }
+  console.log(`  ${p.id}: ${clinicFloors.length} clinic floor(s) ` +
+    `(${clinicFloors.map((f) => f.key).join(', ')}) x ${rooms.length} rooms`);
+}
+
+/* A shared drawing must have its printed floor name covered, or a second-floor
+ * clinic ships on paper that says third. */
+for (const p of liveProjects) {
+  const plan = G.PLANS[p.planKey];
+  const shared = p.floors.filter((f) => f.use === 'Medical' && f.plan).map((f) => f.plan);
+  const reused = new Set(shared).size < shared.length;
+  if (!reused) continue;
+  check(`${p.id}: reuses one drawing across floors, so it must patch the printed floor name`,
+    plan.floorLabel === null || (plan.floorLabel && plan.floorLabel.w > 0),
+    'floorLabel is not declared');
+}
+check('EMC patches the "3ND" printed on its shared drawing', !!G.PLANS.emc.floorLabel);
+check('9MC needs no patch — its drawing prints no floor name', G.PLANS.mc9.floorLabel === null);
+check('Second -> 2ND', G.floorOrdinal('Second') === '2ND');
+check('Third -> 3RD', G.floorOrdinal('Third') === '3RD');
+check('Ninth -> 9TH', G.floorOrdinal('Ninth') === '9TH');
+
 /* ---- sheet parsing ------------------------------------------------------ */
 console.log('\nSheet parsing');
 const snapshotRows = G.parseCSV(G.SNAPSHOTS.emc.csv);
@@ -210,11 +270,33 @@ check('9MC prices foot to area x meter price',
 check('every 9MC clinic number exists on the plan',
   r9.units.every((u) => mc9.pins[u.clinic]),
   r9.units.filter((u) => !mc9.pins[u.clinic]).map((u) => u.code).join(','));
-// MC922 is 23 m² in the sheet but 19 m² on the drawing — the checker must say so.
-check('the MC922 area mismatch is reported',
-  r9.warnings.some((w) => w.includes('MC922') && w.includes('19')),
-  r9.warnings.join(' | ') || 'no warnings raised');
 console.log(`  9MC warnings: ${r9.warnings.length ? r9.warnings.join(' | ') : 'none'}`);
+
+/* The sheet-versus-drawing area check.
+ *
+ * This used to assert against MC922, which really did disagree with the drawing.
+ * Operations then withdrew that unit and the test started failing for the wrong
+ * reason — a green suite is not supposed to depend on one unit staying broken.
+ * Driven by a synthetic row instead, so it keeps testing the checker itself. */
+{
+  const HDR = 'PROJECT,Type,Floor,Unit Code,Indoor area,Indoor meter price,Total unit price,Status\n';
+  const drawn = G.PLANS.mc9.areas[15];                    // clinic 15 per the drawing
+  const wrong = drawn + 4;
+  const bad = G.normalizeRows(G.parseCSV(
+    `${HDR}9MC,CLINIC,Nineth,MC915,${wrong},"80,000.00","${wrong * 80000}",Available`), G.PLANS.mc9.areas);
+  check('an area that disagrees with the drawing is reported',
+    bad.warnings.some((w) => w.includes('MC915') && w.includes(String(drawn))),
+    bad.warnings.join(' | ') || 'no warnings raised');
+  const ok = G.normalizeRows(G.parseCSV(
+    `${HDR}9MC,CLINIC,Nineth,MC915,${drawn},"80,000.00","${drawn * 80000}",Available`), G.PLANS.mc9.areas);
+  check('an area that matches the drawing is not reported', ok.warnings.length === 0,
+    ok.warnings.join(' | '));
+  // And the arithmetic cross-foot: area x meter price must equal the total.
+  const off = G.normalizeRows(G.parseCSV(
+    `${HDR}9MC,CLINIC,Nineth,MC915,${drawn},"80,000.00","999,999.00",Available`), G.PLANS.mc9.areas);
+  check('a total that does not foot to area x meter price is reported',
+    off.warnings.some((w) => w.includes('≠')), off.warnings.join(' | ') || 'no warnings raised');
+}
 
 /* ---- 9MC payment plans, held units and calendar dates ------------------- */
 console.log('\n9MC payment plans');
@@ -224,22 +306,26 @@ const r9b = G.normalizeRows(G.parseCSV(G.SNAPSHOTS.mc9.csv), G.PLANS.mc9.areas);
 const u9 = r9b.units.find((u) => u.code === 'MC924');   // 80 m², 6,400,000
 const CONTRACT = new Date(2026, 7, 11);                 // 11 Aug 2026
 
-/* MC922: the sheet says 23 m², the drawing says 19 m². config.js resolves that
- * in favour of the drawing and keeps the sheet's total price, so the meter
- * price has to be re-derived or the offer would not foot. */
-const mc922 = r9b.units.find((u) => u.code === 'MC922');
-check('MC922 is no longer held', mc922.state === 'available', `state is ${mc922.state}`);
-check('MC922 uses the drawing area, not the sheet\'s', mc922.area === 19, `got ${mc922.area}`);
-check('MC922 keeps the sheet price', mc922.price === 1840000, `got ${mc922.price}`);
-check('MC922 meter price is re-derived from the price',
-  Math.abs(mc922.area * mc922.meterPrice - mc922.price) < 1,
-  `${mc922.area} × ${mc922.meterPrice} = ${mc922.area * mc922.meterPrice}`);
-check('the correction is recorded so the agent sees it',
-  r9b.warnings.some((w) => w.includes('MC922') && w.includes('19')));
-check('the corrected area no longer trips the drawing check',
-  !r9b.warnings.some((w) => w.includes('MC922') && w.includes('floor plan says')));
 check('no 9MC unit is on hold', r9b.units.filter((u) => u.state === 'held').length === 0);
-check('MC922 can be offered', r9b.units.filter((u) => u.state === 'available').some((u) => u.code === 'MC922'));
+check('no unit override is in force', Object.keys(C9.unitOverrides || {}).length === 0,
+  `still overriding ${Object.keys(C9.unitOverrides || {}).join(', ')}`);
+
+/* The override mechanism itself still has to work — the next disagreement
+ * between a sheet and a drawing will use it. Exercised synthetically rather than
+ * against a real unit, so retiring an override never silently retires the test. */
+{
+  const HDR = 'PROJECT,Type,Floor,Unit Code,Indoor area,Indoor meter price,Total unit price,Status\n';
+  const saved = C9.unitOverrides;
+  C9.unitOverrides = { MC930: { area: 20, reason: 'drawing wins' } };
+  const { units: ov, warnings: ovw } = G.normalizeRows(
+    G.parseCSV(`${HDR}9MC,CLINIC,Nineth,MC930,25,"80,000.00","2,000,000.00",Available`), G.PLANS.mc9.areas);
+  check('an override replaces the sheet area', ov[0].area === 20, `got ${ov[0].area}`);
+  check('an override re-derives the meter price so the offer foots',
+    Math.abs(ov[0].area * ov[0].meterPrice - ov[0].price) < 1);
+  check('an override leaves the total price alone', ov[0].price === 2000000);
+  check('an override is reported to the agent', ovw.some((w) => w.includes('MC930')));
+  C9.unitOverrides = saved;
+}
 
 check('9MC delivers in 3.5 years', C9.deliveryMonths === 42, `got ${C9.deliveryMonths}`);
 check('9MC maintenance falls one year before delivery',

@@ -20,6 +20,25 @@ const GLOBAL = {
   reservedStatuses: ['reserved', 'on hold', 'hold', 'blocked'],
 };
 
+/**
+ * Floors that are the same layout repeated up a tower.
+ *
+ * 9MC's clinic floors run third to ninth and are identical — only the floor
+ * digit in the unit code changes, so MC322 and MC922 are the same room seven
+ * floors apart. They therefore share one drawing and one set of pins.
+ *
+ * `released: false` is only the fallback label: app.js treats a floor as live
+ * the moment the sheet has rows for it, so operations can open a new floor by
+ * adding rows and nothing here needs editing.
+ */
+const repeatedFloors = (keys, plan, use = 'Medical') => keys.map((key) => ({
+  key,
+  label: `${key} Floor`,
+  use,
+  plan,
+  released: false,
+}));
+
 const PROJECTS = [
   {
     ...GLOBAL,
@@ -109,7 +128,7 @@ const PROJECTS = [
     name: '9MC',
     subtitle: '99 Medical Center',
     location: 'MU23, New Capital',
-    blurb: '37 clinics on the ninth floor',
+    blurb: '37 clinics per floor · third to ninth',
     card: 'assets/projects/9mc.jpg',
     live: true,
     planKey: 'mc9',
@@ -165,7 +184,12 @@ const PROJECTS = [
       ];
     },
 
+    /* Third to ninth are clinic floors and all the same drawing — see
+     * repeatedFloors above. Ninth is flagged released because it is the floor
+     * currently selling; the rest light up on their own as soon as operations
+     * put rows for them in the sheet. */
     floors: [
+      ...repeatedFloors(['Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth'], 'assets/plan-9mc.jpg'),
       { key: 'Ninth', label: 'Ninth Floor', use: 'Medical', plan: 'assets/plan-9mc.jpg', released: true },
     ],
 
@@ -196,24 +220,20 @@ const PROJECTS = [
      * `CODE: 'reason shown to the agent'`. */
     excludedUnits: {},
 
-    /* Corrections applied on top of the sheet, per unit.
+    /* Corrections applied on top of the sheet, per unit — `CODE: { area, reason }`.
      *
-     * These exist because the sheet and the architectural drawing disagree, and
-     * the drawing is the thing the customer will actually receive. An override
-     * replaces the sheet's area and re-derives the meter price from the total
-     * price, so the offer stays internally consistent: area × meter price still
-     * equals the price the ops team set. The total price is never overridden —
-     * that number belongs to the sheet.
+     * For when the sheet and the architectural drawing disagree and the drawing
+     * has been accepted as right. An override replaces the area and re-derives
+     * the meter price from the total price, so the offer still foots: area ×
+     * meter price = the price operations set. The total price is never
+     * overridden; that number belongs to the sheet.
      *
-     * Delete an entry once the ops team fixes the sheet; the app will then just
-     * use the sheet directly. */
-    unitOverrides: {
-      MC922: {
-        area: 19,
-        reason: 'The architectural drawing is the source of truth for the size; the sheet figure is a '
-          + 'data-entry error. The total price is unchanged, so the price per m² is recalculated from it.',
-      },
-    },
+     * Empty on purpose. MC922 used to be here, forcing the drawing's 19 m² over
+     * the sheet's 23 m². Operations have since confirmed 23 m² is correct and
+     * withdrawn the unit, so the override was wrong and has been removed — the
+     * app follows the sheet. Note the drawing still prints 19 m² for clinic 22,
+     * so if that unit ever returns the app will flag the mismatch again. */
+    unitOverrides: {},
   },
 ];
 

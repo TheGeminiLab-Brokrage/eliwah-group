@@ -185,6 +185,33 @@ function renderPlan() {
   svg.innerHTML = '';
   pinEls.clear();
   hidePop();
+
+  /* Identical floors share one drawing, so the floor name printed on it is only
+   * correct for one of them. Cover it and write the floor being viewed, so the
+   * screen matches the PDF. */
+  if (P.floorLabel) {
+    const L = P.floorLabel;
+    const bg = document.createElementNS(SVG_NS, 'rect');
+    bg.setAttribute('x', L.x); bg.setAttribute('y', L.y);
+    bg.setAttribute('width', L.w); bg.setAttribute('height', L.h);
+    bg.setAttribute('fill', L.fill ? `rgb(${L.fill.join(',')})` : '#ffffff');
+    svg.appendChild(bg);
+
+    const line = (text, dy, size) => {
+      const t = document.createElementNS(SVG_NS, 'text');
+      t.setAttribute('x', L.x + L.w / 2);
+      t.setAttribute('y', L.y + L.h * dy);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('font-size', size);
+      t.setAttribute('fill', '#464646');
+      t.setAttribute('font-family', 'Segoe UI, Helvetica, Arial, sans-serif');
+      t.textContent = text;
+      svg.appendChild(t);
+    };
+    line('MEDICAL FLOOR', 0.42, 27);
+    line(floorOrdinal(floor.key), 0.88, 37);
+  }
+
   const byClinic = new Map(unitsOnFloor(state.floorKey).map((u) => [u.clinic, u]));
 
   // Pins, not outlined rooms — see the note in js/plan.js. Drawn in state order

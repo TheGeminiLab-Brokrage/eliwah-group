@@ -166,6 +166,17 @@ const MC9_AREAS = {
   29: 18, 30: 17, 31: 19, 32: 19, 33: 19, 34: 19, 35: 19, 36: 19, 37: 34,
 };
 
+/** "Second" -> "2ND", "Ninth" -> "9TH". Used to reprint a shared drawing's
+ *  floor label with the floor actually being sold. */
+function floorOrdinal(key) {
+  const n = ['Ground', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth',
+    'Seventh', 'Eighth', 'Ninth', 'Tenth'].indexOf(key);
+  if (n < 1) return String(key).toUpperCase();
+  const suffix = n % 10 === 1 && n !== 11 ? 'ST' : n % 10 === 2 && n !== 12 ? 'ND'
+    : n % 10 === 3 && n !== 13 ? 'RD' : 'TH';
+  return `${n}${suffix}`;
+}
+
 /* ---- registry -----------------------------------------------------------
  * Each project points at one of these by `planKey` in js/config.js. */
 const PLANS = {
@@ -176,6 +187,18 @@ const PLANS = {
     pins: CLINIC_PINS,
     pinR: 17, pinRsel: 23,
     polygons: POLYGONS,      // kept: used by scripts/verify-plan.js
+
+    /* The supplied drawing has "MEDICAL FLOOR / 3ND" printed in the courtyard.
+     * The second floor is the same layout, so it reuses this drawing — and that
+     * label would then be wrong on a second-floor offer. This box covers it and
+     * the correct floor is printed back in its place, which also fixes the
+     * drawing's own "3ND" typo on the third floor.
+     *
+     * Reference-space coordinates. `fill` is sampled from the courtyard around
+     * the label, not pure white, so the patch does not show as a box.
+     *
+     * Delete this once a real drawing is supplied per floor. */
+    floorLabel: { x: 668, y: 596, w: 248, h: 104, fill: [239, 238, 237] },
   },
   mc9: {
     refW: MC9_REF_W,
@@ -186,12 +209,15 @@ const PLANS = {
       n, { n: Number(n), x, y, area: MC9_AREAS[n] },
     ])),
     polygons: null,
+    // The 9MC drawing prints no floor name, so floors three to nine share it
+    // as-is with nothing to correct.
+    floorLabel: null,
   },
 };
 
 if (typeof module !== 'undefined') {
   module.exports = {
     PLANS, POLYGONS, CLINIC_HOTSPOTS, CLINIC_PINS, CLINIC_AREAS,
-    PLAN_REF_W, PLAN_REF_H, polygonCentroid,
+    PLAN_REF_W, PLAN_REF_H, polygonCentroid, floorOrdinal,
   };
 }

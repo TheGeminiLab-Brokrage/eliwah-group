@@ -327,9 +327,29 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
     const r = containRect(planImg, M, y - 4, PW - 2 * M, PH - y - 18);
     doc.addImage(planImg.data, planImg.format, r.x, r.y, r.w, r.h, undefined, 'FAST');
 
+    const P = PLANS[CONFIG.planKey];
+
+    /* One drawing serves several identical floors, so the floor name printed on
+     * it is only right for one of them. Cover it and print the floor this offer
+     * is actually for — otherwise a second-floor clinic ships on a sheet of
+     * paper that says third. */
+    if (P.floorLabel) {
+      const L = P.floorLabel;
+      const box = {
+        x: r.x + (L.x / P.refW) * r.w, y: r.y + (L.y / P.refH) * r.h,
+        w: (L.w / P.refW) * r.w, h: (L.h / P.refH) * r.h,
+      };
+      setFill(doc, L.fill || [255, 255, 255]);
+      doc.rect(box.x, box.y, box.w, box.h, 'F');
+      setText(doc, [70, 70, 70]);
+      doc.setFont('helvetica', 'normal').setFontSize(11);
+      doc.text('MEDICAL FLOOR', box.x + box.w / 2, box.y + box.h * 0.42, { align: 'center' });
+      doc.setFontSize(15);
+      doc.text(floorOrdinal(floor.key), box.x + box.w / 2, box.y + box.h * 0.85, { align: 'center' });
+    }
+
     // Mark the selected room with a pin, matching the on-screen plan. A pin
     // reads unambiguously even though the traced room outlines are approximate.
-    const P = PLANS[CONFIG.planKey];
     const pin = P.pins[unit.clinic];
     const px = r.x + (pin.x / P.refW) * r.w;
     const py = r.y + (pin.y / P.refH) * r.h;

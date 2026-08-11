@@ -19,8 +19,8 @@ Two projects are connected, both reading their own published Google Sheet:
 
 | Project | Building | Inventory | Offers |
 |---|---|---|---|
-| **EMC** — Eliwah Medical Center, El Yasmeen, New Cairo | G+3, 34 clinics on the third floor | live | yes |
-| **9MC** — 99 Medical Center, MU23, New Capital | 37 clinics on the ninth floor | live | yes |
+| **EMC** — Eliwah Medical Center, El Yasmeen, New Cairo | G+3; 34 clinics per medical floor, second and third | live | yes |
+| **9MC** — 99 Medical Center, MU23, New Capital | 37 clinics per floor, third to ninth | live | yes |
 
 Note they are in **different cities**. Every piece of project content in the PDF —
 description, advantages, renders, location map, contact details — is per project
@@ -86,7 +86,7 @@ disagree and the drawing has been accepted as right:
 
 ```js
 unitOverrides: {
-  MC922: { area: 19, reason: 'why the sheet is wrong' },
+  MC930: { area: 20, reason: 'why the sheet is wrong' },
 }
 ```
 
@@ -97,7 +97,12 @@ correction shows in the app's warning banner rather than being applied silently.
 
 Delete the entry once ops fix the sheet; the app then just uses the sheet.
 
-Currently overridden: **MC922** — 19 m² from the drawing, not the sheet's 23 m².
+**Currently empty, on purpose.** MC922 was overridden here to force the
+drawing's 19 m² over the sheet's 23 m². Operations later confirmed **23 m² is
+correct** and withdrew the unit, so the override was wrong and has been removed.
+Note the drawing still prints 19 m² for clinic 22 — if that unit ever returns to
+the sheet at 23 m², the app will flag the mismatch again, which is the right
+behaviour: one of the two sources needs correcting.
 
 ## Adding a project
 
@@ -193,6 +198,51 @@ Only `Available` / `Free` / `Open` (any case, any spacing) make a unit offerable
 — is treated as not available.** Hiding a free clinic costs a phone call; selling
 a sold one costs a customer.
 
+## Opening a new floor — no developer needed
+
+**This is the handover promise: operations add rows to the sheet, the floor
+appears.** Both towers repeat one clinic layout up several floors, and the unit
+code carries its own floor digit, so `C219` and `C319` are the same room one
+floor apart, as are `MC322` and `MC922`.
+
+| Project | Floors set up | Rooms each |
+|---|---|---|
+| EMC | Second, Third | 34 |
+| 9MC | Third to Ninth | 37 |
+
+That is **68 EMC clinics and 259 9MC clinics** already wired. Any of them becomes
+sellable the moment a row for it exists with a valid code, a price and the status
+`Available`. `released: false` in `js/config.js` is only the fallback label —
+app.js treats a floor as live as soon as the sheet has rows for it.
+
+`scripts/test.js` proves this by generating a real offer for the first and last
+room of every declared floor, so the promise is checked rather than assumed.
+
+### The three things that still need a developer
+
+1. **A clinic number that isn't on the drawing** — above 34 (EMC) or 37 (9MC).
+   The unit appears in the list but gets no pin on the plan, and the plan page of
+   the PDF comes out blank. Needs a pin adding to `js/plan.js`.
+2. **A floor that isn't in `CONFIG.floors`** — EMC's Ground and First, or a 9MC
+   floor below the third. Those units are parsed but never displayed, with no
+   warning. Add the floor (and its drawing) to `js/config.js`.
+3. **A different layout.** Everything here assumes the repeated floors are
+   identical, which the client confirmed.
+
+### Reused drawings and the floor name printed on them
+
+EMC's drawing has `MEDICAL FLOOR / 3ND` printed in the courtyard, so reusing it
+for the second floor would ship a second-floor clinic on paper saying third.
+`PLANS.emc.floorLabel` in `js/plan.js` is a box that covers that text; the app
+and the PDF both reprint the floor actually being sold, which also corrects the
+drawing's own `3ND` typo. The fill colour is sampled from the courtyard so the
+patch does not show as a white box.
+
+The 9MC drawing prints no floor name, so floors three to nine share it untouched
+(`floorLabel: null`).
+
+Delete the patch as soon as a real drawing exists for each floor.
+
 ## What's live right now
 
 Only the **third floor** has inventory (15 of 34 clinics). The other 19 are not
@@ -247,7 +297,7 @@ reservation form turns up later, check it against these five points first.
 ## Scripts
 
 ```
-node scripts/test.js                        # 1247 checks: geometry, pins, parser,
+node scripts/test.js                        # 1298 checks: geometry, pins, parser,
                                             # status, dates, schedules, and that
                                             # each project has its own PDF content
 node scripts/test-pdf.js mc9 MC924 dp20     # render a real PDF outside the browser
@@ -308,24 +358,27 @@ so images route through jsPDF's canvas path and get re-encoded.
 `#C313` on the URL opens straight to that unit, so a specific offer can be
 shared as a link.
 
-## Open question on the 9MC sheet
+## Closed: the MC922 area
 
-`MC922` is listed as **23 m²** in the sheet but the drawing labels clinic 22 as
-**19 m²**. On instruction the app uses the **drawing's 19 m²** with the sheet's
-**1,840,000 EGP** total. Keeping the price while shrinking the area puts the
-price per m² at **96,842**, against the flat 80,000 every other 9MC clinic
-carries — that figure prints on the offer, so it is still worth a confirmation
-from operations. Once they fix the sheet, delete the `MC922` entry from
-`unitOverrides` in `js/config.js`.
+`MC922` was listed as 23 m² in the sheet while the drawing labels clinic 22 as
+19 m². It was briefly forced to 19 m² through `unitOverrides`. **Operations
+confirmed 23 m² is correct and withdrew the unit from sale**, so the override was
+removed and the row is gone from the sheet — the app reports no warnings.
 
-The same check found nothing else across either project — every other unit's area
-matches its drawing, and every total foots to area × meter price.
+One loose end: the **drawing still prints 19 m²** for clinic 22 (and for clinic
+23). If MC922 ever returns to the sheet at 23 m², the area check will flag it
+again. That is deliberate — it means the drawing needs correcting, not the app.
+
+Every other unit across both projects matches its drawing, and every total foots
+to area × meter price.
 
 ## Still needed
 
 - Confirm 9MC's maintenance rate (delivery is confirmed at 3.5 years)
-- Confirm MC922's 96,842/m², which follows from keeping its price at 19 m²
-- EMC Ground / First floor plans (Second reuses the Third's layout)
+- Correct the 9MC drawing, which prints 19 m² for clinics 22 and 23 where
+  operations say 23 m²
+- EMC Ground / First floor plans, and a real per-floor drawing for each medical
+  floor so the `floorLabel` patch can be deleted
 - An EMC-specific logo, if one exists. The Eliwah Group lockup is now used
   throughout; there is no separate EMC or 9MC mark in the supplied artwork.
 - Arabic, if wanted later. Text is centralised, but jsPDF needs an embedded
