@@ -170,7 +170,9 @@ const PROJECTS = [
     contact: {
       web: 'www.eliwahgroup.com',
       address: 'MU23, New Capital',
-      phone: '01125553339',
+      // No phone number on the offer — removed at the client's request
+      // (2026-08-13). pdf.js filters out absent fields, so the footer just
+      // closes up. Do not put one back without asking.
       email: '9mc@eliwahgroup.com',
     },
 
