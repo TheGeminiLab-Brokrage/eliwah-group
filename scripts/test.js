@@ -10,7 +10,7 @@ const load = (...files) => {
   const src = files.map((f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8')).join('\n;\n');
   return new Function(`${src}
     return { CONFIG, cfg: () => CONFIG, setProject, addMonths, SNAPSHOTS, parseCSV, normalizeRows, parseUnitCode, parseNumber,
-             buildSchedule, scheduleTotal, combineUnits, listAnd, CLINIC_AREAS, CLINIC_HOTSPOTS, POLYGONS, CLINIC_PINS, PROJECTS, PLANS, floorOrdinal };`)();
+             buildSchedule, scheduleTotal, combineUnits, listAnd, loadInventory, CLINIC_AREAS, CLINIC_HOTSPOTS, POLYGONS, CLINIC_PINS, PROJECTS, PLANS, floorOrdinal };`)();
 };
 
 const G = load('js/config.js', 'js/plan.js', 'js/data.js', 'js/sheet.js', 'js/engine.js');
@@ -651,6 +651,41 @@ console.log(`  combined ${c1.code}+${c2.code}: ${pair.area} m², `
   + `${pair.price.toLocaleString()} ${G.CONFIG.currency}`
   + `${pair.blendedRate ? ' (blended rate)' : ''}`);
 
+/* ---- prefetched inventory ------------------------------------------------
+ *
+ * The sheets are fetched at boot, before a project is picked, so the wait does
+ * not land after the click. The risk in that is serving an agent availability
+ * from when the page opened rather than from now, so the properties worth
+ * pinning are that prefetched text parses identically and that it is dated when
+ * it ARRIVED, not when it was used.
+ */
+const prefetchChecks = (async () => {
+  console.log('\nPrefetched inventory');
+  const snapCsv = G.SNAPSHOTS.emc.csv;
+  const arrived = Date.now() - 12000;               // landed 12s before the click
+
+  // No fetch is defined in this harness, so if loadInventory reaches the
+  // network at all this throws rather than quietly passing.
+  const res = await G.loadInventory(G.CLINIC_AREAS, { text: snapCsv, at: arrived, errors: [] });
+
+  check('prefetched text is treated as live', res.live === true);
+  check('prefetched text parses to the same units',
+    res.units.length === units.length, `${res.units.length} vs ${units.length}`);
+  check('prefetched units match code for code',
+    res.units.every((u, i) => u.code === units[i].code && u.price === units[i].price));
+  check('dated when the response arrived, not when it was used',
+    Math.abs(res.fetchedAt.getTime() - arrived) < 1000,
+    `${res.fetchedAt.toISOString()} vs ${new Date(arrived).toISOString()}`);
+
+  /* Empty text must NOT be taken as an empty inventory — that would read as
+   * "everything is sold" and hide the whole floor. It has to fall through. */
+  const blank = await G.loadInventory(G.CLINIC_AREAS, { text: '', at: Date.now(), errors: [] });
+  check('empty prefetch falls back to the snapshot rather than showing nothing',
+    blank.units.length > 0 && blank.live === false);
+
+  console.log(`  prefetched: ${res.units.length} units, live, dated on arrival`);
+})();
+
 /* worked example, printed so it can be eyeballed against a real offer */
 const sample = units.find((u) => u.code === 'C313');
 const plan = G.CONFIG.plans.find((p) => p.id === 'dp10');
@@ -662,5 +697,11 @@ console.log(`  ${summary.instalmentCount} quarterly x  ${summary.instalmentAmoun
 console.log(`  maintenance     ${summary.maintenance.toLocaleString()}  (10%, month 18)`);
 console.log(`  total payable   ${summary.totalPayable.toLocaleString()}`);
 
-console.log(`\n${pass} passed, ${fail} failed\n`);
-process.exit(fail ? 1 : 0);
+/* The prefetch checks are async, so the summary has to wait for them — printing
+ * it synchronously would report a total that did not include them. */
+prefetchChecks
+  .catch((err) => { fail++; console.log(`  FAIL  prefetched inventory — ${err.message}`); })
+  .then(() => {
+    console.log(`\n${pass} passed, ${fail} failed\n`);
+    process.exit(fail ? 1 : 0);
+  });

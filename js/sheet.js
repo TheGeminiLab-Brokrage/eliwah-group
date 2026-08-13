@@ -190,24 +190,64 @@ function normalizeRows(rows, planAreas) {
   return { units, warnings };
 }
 
-/** Fetch the sheet, falling back through the URL list, then to the snapshot. */
-async function loadInventory(planAreas) {
+/* A hung connection otherwise never resolves, and the app spins on "Loading
+ * inventory…" forever instead of falling back to the saved copy. */
+const SHEET_TIMEOUT_MS = 6000;
+
+/**
+ * Fetch the published CSV, trying each URL in turn. Returns the raw text.
+ *
+ * Deliberately free of CONFIG: it takes URLs and gives back text, nothing more.
+ * That is exactly what makes it safe to start one of these for a project that
+ * is NOT the selected one — which is how app.js prefetches both projects while
+ * the agent is still choosing. Parsing stays in loadInventory below, where
+ * CONFIG is guaranteed to point at the project being parsed; doing it here
+ * would risk applying one project's holds and overrides to another's units.
+ */
+async function fetchSheetCSV(urls) {
   const errors = [];
 
-  for (const url of CONFIG.sheetUrls) {
+  for (const url of urls) {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), SHEET_TIMEOUT_MS) : null;
     try {
-      const res = await fetch(url, { cache: 'no-store' });
+      const res = await fetch(url, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
       if (!res.ok) { errors.push(`${res.status} from ${new URL(url).pathname}`); continue; }
       const text = await res.text();
       // A login page means the sheet stopped being published.
       if (/^\s*</.test(text)) { errors.push('the sheet is no longer published publicly'); continue; }
-
-      const { units, warnings } = normalizeRows(parseCSV(text), planAreas);
-      if (!units.length) { errors.push(warnings[0] || 'no usable rows'); continue; }
-      return { units, warnings, live: true, fetchedAt: new Date(), errors };
+      return { text, at: Date.now(), errors };
     } catch (err) {
-      errors.push(err.message);
+      errors.push(err && err.name === 'AbortError'
+        ? `no answer from ${new URL(url).hostname} within ${SHEET_TIMEOUT_MS / 1000}s`
+        : err.message);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
+  }
+  return { text: null, at: Date.now(), errors };
+}
+
+/**
+ * Fetch the sheet, falling back through the URL list, then to the snapshot.
+ *
+ * `prefetched` is a result from fetchSheetCSV started earlier — see app.js.
+ * When given, no request is made here.
+ *
+ * Note both URLs serve the same tab, so text that parses to nothing on one
+ * would parse to nothing on the other; there is no point retrying the second.
+ */
+async function loadInventory(planAreas, prefetched) {
+  const { text, at, errors } = prefetched || await fetchSheetCSV(CONFIG.sheetUrls);
+
+  if (text) {
+    const { units, warnings } = normalizeRows(parseCSV(text), planAreas);
+    if (units.length) {
+      // Dated when the response actually arrived, not now: a prefetch may have
+      // landed a few seconds before the agent picked the project.
+      return { units, warnings, live: true, fetchedAt: new Date(at || Date.now()), errors };
+    }
+    errors.push(warnings[0] || 'no usable rows');
   }
 
   // Offline / sheet unreachable: fall back to the snapshot baked in at build
@@ -237,5 +277,5 @@ async function loadInventory(planAreas) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { parseCSV, parseNumber, normalizeRows, parseUnitCode, mapHeaders };
+  module.exports = { parseCSV, parseNumber, normalizeRows, parseUnitCode, mapHeaders, fetchSheetCSV, loadInventory };
 }

@@ -11,13 +11,24 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-/* v2 — combined offers, traced room outlines, no phone on the offer (2026-08-13).
- * Every one of those touched the shell, so returning phones need a new cache. */
-const CACHE = 'eliwah-offers-v2';
+/* v3 — inventory prefetched at boot, and a timeout on the sheet fetch.
+ * v2 — combined offers, traced room outlines, no phone on the offer (2026-08-13). */
+const CACHE = 'eliwah-offers-v3';
 
 /* The shell: enough to boot and render, kept small so the first visit on mobile
  * data is quick. The heavy print assets are deliberately NOT here — they are
- * cached on first use instead, see below. */
+ * cached on first use instead, see below.
+ *
+ * Keep this array free of comments: scripts/test.js parses it by splitting on
+ * commas, so a comment in here reads as several bogus paths and fails the run.
+ *
+ * jsPDF is here even though index.html also loads it with a <script> tag, so
+ * 420KB is fetched twice on a cold visit. Dropping it was tried and put back:
+ * the worker does not reliably control the very FIRST page load, so the script
+ * tag alone would leave an agent who goes offline right after their first visit
+ * unable to produce a PDF — and producing an offer offline in front of a client
+ * is the point. The cold-start wait was fixed by prefetching the inventory in
+ * app.js instead, which costs nothing. */
 const SHELL = [
   './',
   'index.html',

@@ -634,12 +634,53 @@ function renderSchedule() {
   t.appendChild(tb);
 }
 
+/* ---------------- inventory prefetch ----------------
+ *
+ * The sheets are fetched the moment the app opens, for every live project,
+ * instead of waiting for one to be picked. Choosing a project takes an agent a
+ * few seconds; without this, that time is dead and the whole wait lands after
+ * the click. It is the same request either way, just started earlier — nothing
+ * is cached between page loads and the inventory is no less live.
+ *
+ * Only the raw CSV is prefetched. Parsing reads CONFIG for holds, overrides and
+ * status lists, so it has to happen with CONFIG pointing at the project being
+ * parsed — hence fetchSheetCSV taking URLs and returning text and nothing else.
+ */
+const SHEET_PREFETCH_MAX_AGE_MS = 45000;
+const sheetPrefetch = new Map();
+
+function prefetchSheets() {
+  for (const p of PROJECTS) {
+    if (!p.live || !p.sheetUrls) continue;
+    sheetPrefetch.set(p.id, fetchSheetCSV(p.sheetUrls).catch(() => null));
+  }
+}
+
+/**
+ * The prefetched CSV for a project, if it is still recent enough to trust.
+ *
+ * Consumed once: a later load (the Refresh button, or coming back to a project)
+ * must go to the network, or an agent could be shown availability from when the
+ * page was opened rather than from now. Stale availability sells a sold clinic,
+ * which is the one failure this app exists to prevent.
+ */
+async function takePrefetchedSheet(projectId) {
+  const pending = sheetPrefetch.get(projectId);
+  if (!pending) return null;
+  sheetPrefetch.delete(projectId);
+  const res = await pending;
+  if (!res || !res.text) return null;
+  if (Date.now() - res.at > SHEET_PREFETCH_MAX_AGE_MS) return null;
+  return res;
+}
+
 /* ---------------- boot ---------------- */
-async function load() {
+async function load({ fresh = false } = {}) {
   $('refresh').disabled = true;
   $('syncText').textContent = 'Loading inventory…';
 
-  const res = await loadInventory(activePlan().areas);
+  const pre = fresh ? null : await takePrefetchedSheet(state.projectId);
+  const res = await loadInventory(activePlan().areas, pre);
   Object.assign(state, res);
 
   /* Keep each picked clinic only if it is still available in the new data, and
@@ -755,7 +796,9 @@ window.addEventListener('hashchange', () => {
 });
 
 $('sortBy').onchange = (e) => { state.sortBy = e.target.value; renderUnits(); };
-$('refresh').onclick = () => { if (state.projectId) load(); };
+// Refresh always goes to the network — its whole purpose is "tell me what is
+// true right now", so it must never be answered from a prefetch.
+$('refresh').onclick = () => { if (state.projectId) load({ fresh: true }); };
 
 /* ---- issuing the offer ----
  * One code path, two destinations. `share: true` opens the system share sheet
@@ -810,6 +853,8 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 
 /* ---------------- boot ---------------- */
 renderProjects();
+// Before anything else: get both sheets moving while the agent reads the cards.
+prefetchSheets();
 if (location.hash) {
   // Deep link — open the named project, or the first live one if the link is
   // just a unit code, so the hash can resolve against its inventory.

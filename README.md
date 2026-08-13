@@ -148,6 +148,32 @@ sheet appears. No rebuild, no redeploy, no developer involved.
 - Read through the `gviz` endpoint, which sends `Cache-Control: no-cache` and
   echoes the caller's origin, so data is always current and CORS always works.
   `/export?format=csv` is the fallback.
+- Each attempt times out after **6 seconds**. Without that a hung connection
+  never resolves and the app sits on "Loading inventory…" forever instead of
+  falling back to the saved copy.
+
+### Prefetched, so the wait doesn't land on the click
+
+Both sheets are fetched **in parallel the moment the app opens**, before a
+project has been picked. Choosing one takes an agent a few seconds; that time
+used to be dead, and the whole wait arrived after the click — about a second
+warm, and four seconds on a cold visit where the fetch competed with the service
+worker downloading the app shell. Picking a project is now effectively instant
+(single-digit milliseconds) because the data is already in hand.
+
+It is the same request, started earlier. Nothing is cached between page loads
+and the inventory is no less live. Three rules keep it honest:
+
+- **Only the raw CSV is prefetched.** Parsing reads `CONFIG` for holds,
+  overrides and status lists, so it must happen with `CONFIG` pointing at the
+  project being parsed. That is why `fetchSheetCSV()` takes URLs and returns
+  text and nothing else — starting a fetch for a project that isn't selected has
+  to be impossible to get wrong.
+- **A prefetch older than 45 seconds is thrown away** and the sheet re-read. An
+  agent who leaves the app open and comes back must not be shown availability
+  from when the page was opened.
+- **Refresh always goes to the network.** Its entire purpose is "tell me what is
+  true right now", so it never answers from a prefetch.
 
 ⚠️ **The operations team must edit the published Google Sheet.** The inventory
 originally arrived as an uploaded `.xlsx`; an Excel file in Drive has no CSV
