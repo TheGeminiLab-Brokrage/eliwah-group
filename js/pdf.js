@@ -209,6 +209,13 @@ async function buildOfferPDF(selection, plan, floor, contractDate = new Date()) 
   }
   if (!plan) throw new Error('No payment plan selected.');
 
+  /* jsPDF is loaded deferred, after the app's own scripts, so that a cold visit
+   * is not held up by 420KB nobody needs yet. It is in hand long before anyone
+   * has picked a project — but say so plainly rather than throwing a
+   * destructuring error if an offer is somehow asked for first. */
+  if (!window.jspdf) {
+    throw new Error('The PDF library is still loading — try again in a moment.');
+  }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const { rows, summary } = buildSchedule(unit, plan, contractDate);

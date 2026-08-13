@@ -124,7 +124,8 @@
 
 </div>
 
-<script src="vendor/jspdf.umd.min.js"></script>
+<!-- The app's own scripts first, in dependency order. They share one global
+     scope, so they must stay blocking and stay in this order. -->
 <script src="js/config.js"></script>
 <script src="js/plan.js"></script>
 <script src="js/data.js"></script>
@@ -132,5 +133,13 @@
 <script src="js/engine.js"></script>
 <script src="js/pdf.js"></script>
 <script src="js/app.js"></script>
+
+<!-- jsPDF last, and deferred, because it is 420KB and nothing needs it until
+     someone asks for a PDF: pdf.js reads window.jspdf inside buildOfferPDF, at
+     call time. It used to sit at the top and block, which meant that on a cold
+     visit the whole 420KB had to arrive before app.js could run — delaying the
+     inventory fetch by roughly two seconds and putting the wait right back on
+     the agent's click, which is what this ordering exists to prevent. -->
+<script defer src="vendor/jspdf.umd.min.js"></script>
 </body>
 </html>

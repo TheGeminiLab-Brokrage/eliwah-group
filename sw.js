@@ -11,9 +11,10 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-/* v3 — inventory prefetched at boot, and a timeout on the sheet fetch.
+/* v4 — jsPDF deferred so it stops delaying the inventory fetch on a cold visit.
+ * v3 — inventory prefetched at boot, and a timeout on the sheet fetch.
  * v2 — combined offers, traced room outlines, no phone on the offer (2026-08-13). */
-const CACHE = 'eliwah-offers-v3';
+const CACHE = 'eliwah-offers-v4';
 
 /* The shell: enough to boot and render, kept small so the first visit on mobile
  * data is quick. The heavy print assets are deliberately NOT here — they are
