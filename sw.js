@@ -11,7 +11,9 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-const CACHE = 'eliwah-offers-v1';
+/* v2 — combined offers, traced room outlines, no phone on the offer (2026-08-13).
+ * Every one of those touched the shell, so returning phones need a new cache. */
+const CACHE = 'eliwah-offers-v2';
 
 /* The shell: enough to boot and render, kept small so the first visit on mobile
  * data is quick. The heavy print assets are deliberately NOT here — they are

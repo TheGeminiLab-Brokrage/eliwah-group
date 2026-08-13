@@ -1,14 +1,14 @@
 # Eliwah Group — Offer Generator
 
 Sales-offer generator for Eliwah Group's projects. Static web app, no server or
-database. Agent picks a **project → floor → unit on the floor plan → payment
-plan**, then downloads a branded 7-page A4-landscape PDF offer:
+database. Agent picks a **project → floor → one or more clinics on the floor
+plan → payment plan**, then downloads a branded 7-page A4-landscape PDF offer:
 
 1. Cover — exterior render, unit code
 2. The Project — description, key advantages, two renders
 3. Location — map from the fact sheet
-4. Floor plan — the chosen clinic highlighted
-5. Your Unit — details and headline price
+4. Floor plan — the chosen clinic(s) shaded
+5. Your Unit — details and headline price, or a breakdown when clinics are combined
 6. Payment Schedule — every instalment
 7. Terms
 
@@ -117,7 +117,9 @@ To bring another project online:
 3. Fill in `floors` (with a plan image per floor) and `plans`
 4. Fill in `story`, `place` and `contact` from **that project's own** fact sheet,
    and drop its renders and location map in `assets/pdf/` — never reuse another
-   project's, and never write the copy yourself; it goes out over Eliwah's name
+   project's, and never write the copy yourself; it goes out over Eliwah's name.
+   **No phone number on `contact`** — Eliwah asked for it off the offer on
+   2026-08-13; `pdf.js` drops absent fields, so just leave it out
 5. Set `live: true`
 
 No other file needs touching. `CONFIG` is simply whichever project is selected,
@@ -174,25 +176,76 @@ scheme must hold. Codes that don't parse are skipped and reported in the app.
 
 ### Selecting a unit
 
-Hovering a pin opens a card with the code, area, price per m² and total, plus a
-**Select this clinic** button. Hovering a row in the list rings the matching pin
-on the plan, so the agent never has to hunt for a code on the drawing. The list
-sorts by clinic number, price or area.
+Hovering a room opens a card with the code, area, price per m² and total, plus a
+**Select this clinic** button. Hovering a row in the list highlights the matching
+room on the plan, so the agent never has to hunt for a code on the drawing. The
+list sorts by clinic number, price or area.
 
 `#C319` on the URL opens straight to that unit with its card showing. If that
 unit has since sold, the app says so rather than failing silently.
 
-### Why pins, not outlined rooms
+## Combined offers — two clinics, one price
 
-The plan shows a **coloured circle per clinic** (green available, amber reserved,
-**red sold**, pale grey not released) rather than highlighting room outlines. The
-room polygons were traced by hand from a rendered drawing, so they are close but
-not exact, and a highlight a few pixels off a wall reads as sloppy in front of a
-customer. A pin in the middle of the room is unambiguous at any zoom, and the
-drawing already labels every room with its number and area.
+Brokers regularly sell two adjacent clinics as one larger suite — "two 18 m²
+units" — and the customer wants **one price and one schedule**, not two offers
+stapled together. Clicking a room is therefore a **toggle**: pick a second and
+both go into the same offer.
 
-`scripts/test.js` checks that every pin falls inside its own polygon and that no
-two pins overlap at display size.
+- **No fixed cap.** Two is the normal case; three or more work identically.
+- **One floor.** Clinics in one offer must share a floor, so changing floor
+  clears the selection. A deep link naming clinics on two floors keeps the first
+  floor's and says why.
+- **The running selection sits above the plan** — a chip per clinic, the
+  combined area and the combined price. It is the only thing standing between an
+  agent and issuing a two-clinic offer thinking they picked one.
+- `#C313+C314` shares a combined offer as a single link.
+
+Everything downstream still takes **one** unit-shaped object. `combineUnits()`
+in `js/engine.js` builds it, and a single clinic goes through the same path so
+there is one code path rather than two.
+
+| Field | How it combines |
+|---|---|
+| Price | Plain sum. The sheet is the authority; nothing is recalculated. |
+| Area | Plain sum. |
+| Price per m² | Carried across when every clinic shares the same rate. When they differ it is **derived from the totals and flagged blended**, because quoting one clinic's rate against the combined area would misstate the offer. |
+| Availability | Available only if **every** part is. The refusal names the clinic at fault. |
+| Maintenance | The usual 10%, on the combined original price. |
+
+Combining is a packaging decision, not a discount: `scripts/test.js` checks that
+two clinics bought together cost what they cost apart, to within the couple of
+pounds that independent rounding can move.
+
+On the offer itself, page 4 shades **both** rooms, page 5 becomes a per-clinic
+breakdown table footing to a total, and page 7 opens by stating which clinics
+are included. Where the rate is blended the PDF says so and drops the
+"area × rate" line rather than printing a product that does not equal the price
+above it.
+
+### Outlined rooms, not pins
+
+The plan **shades each clinic's own outline** (green available, amber reserved,
+**red sold**, pale grey not released, brand blue for whatever is in the offer).
+
+It used to draw a coloured circle per clinic instead. The polygons at the time
+had been traced against a low-resolution render and were close but not exact,
+and a highlight a few pixels off a wall reads as sloppy in front of a customer,
+so a pin in the middle of the room was the safer choice.
+
+Combined offers changed the trade-off: **two dots cannot show a customer that
+two clinics adjoin**, which is the whole point of a two-clinic offer. Both plans
+were retraced against the 300dpi renders on 2026-08-13 with
+`scripts/make-tracer.js` and checked, so the rooms are now drawn. 9MC had never
+had outlines at all.
+
+`PLANS.<key>.outlines` in `js/plan.js` gates this. Set it false and that
+building falls straight back to pins, in the app and in the PDF — useful if a
+new building's geometry is not yet trustworthy.
+
+Pins are still kept for every room: they anchor the hover card and are the
+fallback. `scripts/test.js` checks that every outline contains its own pin, that
+no two rooms overlap, and that every traced area agrees with the m² printed in
+that room.
 
 ### Status handling — fails closed
 
@@ -288,8 +341,8 @@ reservation form turns up later, check it against these five points first.
 | `index.html`, `css/styles.css` | The app |
 | `js/config.js` | **All projects** — sheet URLs, floors, payment plans, terms, and all PDF copy/assets |
 | `js/sheet.js` | Live sync: fetch, CSV parse, normalise, validate |
-| `js/plan.js` | Clinic polygons + pin positions for the clickable plan |
-| `js/engine.js` | Payment schedule maths |
+| `js/plan.js` | Clinic outlines + pin positions for the clickable plan |
+| `js/engine.js` | Payment schedule maths, and `combineUnits()` for combined offers |
 | `js/pdf.js` | 7-page PDF export (jsPDF) |
 | `js/app.js` | UI wiring |
 | `js/data.js` | **Generated** — offline fallback snapshots, keyed by project |
@@ -300,14 +353,33 @@ reservation form turns up later, check it against these five points first.
 ## Scripts
 
 ```
-node scripts/test.js                        # 1308 checks: geometry, pins, parser,
-                                            # status, dates, schedules, and that
-                                            # each project has its own PDF content
+node scripts/test.js                        # 1381 checks: geometry, outlines, parser,
+                                            # status, dates, schedules, combined
+                                            # offers, and that each project has its
+                                            # own PDF content
 node scripts/test-pdf.js mc9 MC924 dp20     # render a real PDF outside the browser
-node scripts/verify-plan.js mc9             # draw the pins onto the plan to check them
+node scripts/test-pdf.js emc C313+C314 dp10 # ...or a combined two-clinic offer
+node scripts/verify-plan.js mc9             # draw the outlines onto the plan to check
+node scripts/make-tracer.js                 # build the click-to-trace tool (below)
 node scripts/snapshot.js                    # refresh the offline fallbacks
 node scripts/make-brand.js                  # rebuild logos + home-screen icons
 ```
+
+### Retracing a floor plan
+
+`node scripts/make-tracer.js` writes `raw/trace.html` — a self-contained page
+with both drawings embedded, seeded with the outlines already in `js/plan.js`.
+Serve it over `http://localhost` (the clipboard needs a secure context), click
+the corners of each room with the magnifier to place them exactly, then **Save
+.js file** and paste the result back into `js/plan.js`.
+
+It writes coordinates in the same reference space `js/plan.js` uses, so there is
+no conversion step for an error to creep into, and it flags a room whose traced
+area disagrees with the m² printed in it — which is how the 22/23 discrepancy
+below was confirmed. Work is kept in the browser's `localStorage` as you go.
+
+Always finish with `node scripts/verify-plan.js <key>` and **look at the
+picture**. An outline on the wrong room is glaring there and invisible in a test.
 
 Run `snapshot.js` before deploying so the offline fallback isn't stale.
 
@@ -317,12 +389,15 @@ The finished PDF is named for what it is, not for the unit:
 
 ```
 EMC - 22m clinic offer Third Floor.pdf
+EMC - 53m 2-clinic offer Third Floor.pdf     <- combined
 ```
 
 That is the name a customer sees in their WhatsApp chat, so it reads as a
 document rather than a reference code. Two clinics of the same size on the same
 floor therefore produce the same name — the browser appends `(1)` on download,
-and the unit code is on the cover of the PDF either way.
+and the unit code is on the cover of the PDF either way. A combined offer says
+so in the name, because the total area alone would read as one unusually large
+clinic.
 
 **Send on WhatsApp** uses the Web Share API with the PDF attached, so the file
 goes straight into a conversation with no download-then-attach step. The button
@@ -379,7 +454,15 @@ to area × meter price.
 
 - Confirm 9MC's maintenance rate (delivery is confirmed at 3.5 years)
 - Correct the 9MC drawing, which prints 19 m² for clinics 22 and 23 where
-  operations say 23 m²
+  operations say 23 m². The retraced outlines are now a third, independent
+  witness for this: those two rooms are drawn the same size as the 23 m² rooms
+  beside them and trace to about 25 m².
+- **Unresolved — 9MC clinics 1, 2 and 3.** Their outlines follow the drawn walls
+  but trace 29–44% *smaller* than the 38 / 61 / 27 m² printed in them. So either
+  those three labels are wrong in the same way 22 and 23 are, or the rooms
+  extend past what the drawing shows. No price depends on it — the sheet is the
+  authority for area and cost — but the drawing cannot be trusted for those
+  rooms until Eliwah confirms. Recorded in `PLANS.mc9.areaMismatches`.
 - EMC Ground / First floor plans, and a real per-floor drawing for each medical
   floor so the `floorLabel` patch can be deleted
 - An EMC-specific logo, if one exists. The Eliwah Group lockup is now used

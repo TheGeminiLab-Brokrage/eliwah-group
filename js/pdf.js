@@ -144,7 +144,7 @@ function footer(doc, unit, page) {
   doc.line(M, PH - 12, PW - M, PH - 12);
   doc.setFont('helvetica', 'normal').setFontSize(7.5);
   setText(doc, MUTED);
-  doc.text(`${CONFIG.name} · ${CONFIG.location} · Unit ${unit.code}`, M, PH - 7.5);
+  doc.text(`${CONFIG.name} · ${CONFIG.location} · ${unit.combined ? 'Units' : 'Unit'} ${unit.code}`, M, PH - 7.5);
   doc.text('This offer is indicative and subject to availability at the time of contract.', PW / 2, PH - 7.5, { align: 'center' });
   doc.text(String(page), PW - M, PH - 7.5, { align: 'right' });
 }
@@ -168,7 +168,10 @@ function sectionTitle(doc, text, y) {
  * on the cover anyway.
  */
 function offerFilename(unit, floor) {
-  const name = `${CONFIG.name} - ${unit.area}m clinic offer ${floor.label}.pdf`;
+  /* Combined offers say so in the name — "36m 2-clinic offer" — because the
+   * total area alone would read as one unusually large clinic. */
+  const what = unit.combined ? `${unit.area}m ${unit.count}-clinic` : `${unit.area}m clinic`;
+  const name = `${CONFIG.name} - ${what} offer ${floor.label}.pdf`;
   return name.replace(/[\\/:*?"<>|]/g, '-');
 }
 
@@ -181,14 +184,28 @@ function drawPolygon(doc, pts, rect, style) {
   doc.lines(deltas, p[0][0], p[0][1], [1, 1], style, true);
 }
 
-async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
+/**
+ * @param {Object|Array} selection one sheet unit, several to be sold together,
+ *   or an already-combined offer from combineUnits()
+ */
+async function buildOfferPDF(selection, plan, floor, contractDate = new Date()) {
+  /* Normalise to one unit-shaped object so the whole document below is written
+   * once. Accepting all three shapes keeps every existing caller — deep links,
+   * the tests, the share path — working untouched. */
+  const unit = !selection ? null
+    : Array.isArray(selection) ? combineUnits(selection)
+      : selection.units ? selection
+        : combineUnits([selection]);
+
   /* Last line of defence. The UI already refuses to select anything that isn't
    * available, but an offer is the document a customer acts on, so the export
-   * refuses too rather than trusting the caller. */
+   * refuses too rather than trusting the caller. On a combined offer the
+   * refusal names the clinic at fault, not the whole selection. */
   if (!unit || unit.state !== 'available') {
-    throw new Error(unit && unit.heldReason
-      ? `${unit.code} is on hold and cannot be offered — ${unit.heldReason}`
-      : `${unit ? unit.code : 'This unit'} is not available, so no offer can be generated.`);
+    const bad = (unit && unit.blocker) || unit;
+    throw new Error(bad && bad.heldReason
+      ? `${bad.code} is on hold and cannot be offered — ${bad.heldReason}`
+      : `${bad ? bad.code : 'This unit'} is not available, so no offer can be generated.`);
   }
   if (!plan) throw new Error('No payment plan selected.');
 
@@ -229,7 +246,17 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
 
   doc.setFont('helvetica', 'bold').setFontSize(13);
   setText(doc, BRAND_DARK);
-  doc.text(`Offer for Unit ${unit.code}  ·  Clinic ${unit.clinic}  ·  ${floor.label}`, M, PH * 0.62 + 48);
+  const coverLine = unit.combined
+    ? `Offer for Units ${unit.code}  ·  Clinics ${listAnd(unit.clinics)} combined  ·  ${floor.label}`
+    : `Offer for Unit ${unit.code}  ·  Clinic ${unit.clinic}  ·  ${floor.label}`;
+  /* Several codes can outrun the page. Step the size down until it fits rather
+   * than letting the line run off the cover or over the tagline. */
+  const coverMax = PW - 2 * M;
+  for (let size = 13; size >= 8; size--) {
+    doc.setFontSize(size);
+    if (doc.getTextWidth(coverLine) <= coverMax) break;
+  }
+  doc.text(coverLine, M, PH * 0.62 + 48);
   doc.setFont('helvetica', 'normal').setFontSize(9.5);
   setText(doc, MUTED);
   doc.text(`Prepared ${today}`, M, PH * 0.62 + 56);
@@ -321,7 +348,9 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
   /* ---------- 4. floor plan ---------- */
   doc.addPage(); page++;
   header(doc, floor.label, `${floor.use} floor`);
-  y = sectionTitle(doc, `Clinic ${unit.clinic} on the ${floor.label.toLowerCase()}`, 34);
+  y = sectionTitle(doc, unit.combined
+    ? `Clinics ${listAnd(unit.clinics)} on the ${floor.label.toLowerCase()}`
+    : `Clinic ${unit.clinic} on the ${floor.label.toLowerCase()}`, 34);
   try {
     const planImg = await loadImage(CONFIG.planPrint);
     const r = containRect(planImg, M, y - 4, PW - 2 * M, PH - y - 18);
@@ -348,17 +377,39 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
       doc.text(floorOrdinal(floor.key), box.x + box.w / 2, box.y + box.h * 0.85, { align: 'center' });
     }
 
-    // Mark the selected room with a pin, matching the on-screen plan. A pin
-    // reads unambiguously even though the traced room outlines are approximate.
-    const pin = P.pins[unit.clinic];
-    const px = r.x + (pin.x / P.refW) * r.w;
-    const py = r.y + (pin.y / P.refH) * r.h;
-    // No text label: the drawing already prints "CLINIC n" in the room and the
-    // page heading names it, so a caption here would sit on top of both.
-    setFill(doc, [255, 255, 255]);
-    doc.circle(px, py, 3.9, 'F');            // white ring for contrast
-    setFill(doc, BRAND);
-    doc.circle(px, py, 3.1, 'F');
+    /* Mark every clinic in the offer, matching the on-screen plan.
+     *
+     * Outlines when the geometry has been verified against the drawing,
+     * otherwise pins. A shaded room shows a customer that two clinics adjoin,
+     * which is the whole point of a combined offer and something a pair of dots
+     * cannot convey — but a highlight a few pixels off a wall reads as sloppy,
+     * so it is used only where `outlines` says the tracing is trustworthy.
+     *
+     * No text labels: the drawing already prints "CLINIC n" in each room and
+     * the page heading names them, so captions would sit on top of both. */
+    for (const n of unit.clinics) {
+      const room = P.outlines && P.polygons && P.polygons[n];
+      if (room) {
+        setFill(doc, BRAND);
+        setDraw(doc, BRAND_DARK);
+        doc.setLineWidth(0.6);
+        doc.saveGraphicsState();
+        // Let the drawing read through the fill; the outline stays solid.
+        doc.setGState(new doc.GState({ opacity: 0.32 }));
+        drawPolygon(doc, room, r, 'F');
+        doc.restoreGraphicsState();
+        drawPolygon(doc, room, r, 'S');
+      } else {
+        const pin = P.pins[n];
+        if (!pin) continue;
+        const px = r.x + (pin.x / P.refW) * r.w;
+        const py = r.y + (pin.y / P.refH) * r.h;
+        setFill(doc, [255, 255, 255]);
+        doc.circle(px, py, 3.9, 'F');        // white ring for contrast
+        setFill(doc, BRAND);
+        doc.circle(px, py, 3.1, 'F');
+      }
+    }
   } catch (err) {
     console.warn('plan image:', err.message);
     doc.setFont('helvetica', 'normal').setFontSize(10);
@@ -369,28 +420,91 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
 
   /* ---------- 5. the unit ---------- */
   doc.addPage(); page++;
-  header(doc, 'Your Unit', `Unit ${unit.code}`);
-  y = sectionTitle(doc, 'Unit details', 34);
+  header(doc, unit.combined ? 'Your Units' : 'Your Unit',
+    `${unit.combined ? 'Units' : 'Unit'} ${unit.code}`);
+  y = sectionTitle(doc, unit.combined ? 'Unit details — sold together' : 'Unit details', 34);
 
-  const facts = [
-    ['Unit code', unit.code],
-    ['Clinic number', String(unit.clinic)],
-    ['Floor', floor.label],
-    ['Type', unit.type],
-    ['Indoor area', `${unit.area} m²`],
-    ['Price per m²', unit.meterPrice ? fmtMoney(unit.meterPrice) : '—'],
-  ];
-  facts.forEach(([k, v], i) => {
-    const yy = y + i * 11;
-    doc.setFont('helvetica', 'normal').setFontSize(9);
+  const FACT_W = 118;
+  let factsBottom;                          // where the left-hand block ends
+  if (unit.combined) {
+    /* A breakdown rather than one merged row. The customer is buying two
+     * clinics at two prices and will check both against what they were quoted;
+     * showing only the total invites the question the offer should answer. */
+    const cols = [
+      { w: 24, label: 'Unit' },
+      { w: 16, label: 'Clinic' },
+      { w: 18, label: 'Area', num: true },
+      { w: 26, label: `${CONFIG.currency}/m²`, num: true },
+      { w: 34, label: `Price (${CONFIG.currency})`, num: true },
+    ];
+    const cx = (i) => M + cols.slice(0, i).reduce((s, c) => s + c.w, 0);
+    const cell = (i, text, align) => {
+      const left = cx(i);
+      doc.text(text, cols[i].num ? left + cols[i].w - 2 : left + 2, align,
+        { align: cols[i].num ? 'right' : 'left' });
+    };
+
+    setFill(doc, [10, 58, 72]);
+    doc.roundedRect(M, y - 5, FACT_W, 7, 1, 1, 'F');
+    doc.setFont('helvetica', 'bold').setFontSize(6.6);
+    setText(doc, [255, 255, 255]);
+    cols.forEach((c, i) => cell(i, c.label.toUpperCase(), y - 0.4));
+
+    let ry = y + 8.5;
+    for (const part of unit.units) {
+      doc.setFont('helvetica', 'bold').setFontSize(9.5);
+      setText(doc, INK);
+      cell(0, part.code, ry);
+      doc.setFont('helvetica', 'normal').setFontSize(9.5);
+      cell(1, String(part.clinic), ry);
+      cell(2, `${part.area} m²`, ry);
+      setText(doc, MUTED);
+      cell(3, part.meterPrice ? fmt(part.meterPrice) : '—', ry);
+      setText(doc, INK);
+      cell(4, fmt(part.price), ry);
+      setDraw(doc, LINE); doc.setLineWidth(0.2);
+      doc.line(M, ry + 3.2, M + FACT_W, ry + 3.2);
+      ry += 9;
+    }
+
+    setFill(doc, [240, 250, 252]);
+    doc.rect(M, ry - 5.4, FACT_W, 9, 'F');
+    doc.setFont('helvetica', 'bold').setFontSize(9.5);
+    setText(doc, BRAND_DARK);
+    cell(0, 'TOTAL', ry);
+    cell(2, `${unit.area} m²`, ry);
+    if (unit.meterPrice) cell(3, fmt(unit.meterPrice) + (unit.blendedRate ? '*' : ''), ry);
+    cell(4, fmt(unit.price), ry);
+    ry += 8;
+
+    doc.setFont('helvetica', 'normal').setFontSize(7.6);
     setText(doc, MUTED);
-    doc.text(k.toUpperCase(), M, yy);
-    doc.setFont('helvetica', 'bold').setFontSize(12);
-    setText(doc, INK);
-    doc.text(v, M + 52, yy);
-    setDraw(doc, LINE); doc.setLineWidth(0.2);
-    doc.line(M, yy + 3.6, M + 118, yy + 3.6);
-  });
+    doc.text(`${floor.label}  ·  ${unit.type}`
+      + (unit.blendedRate ? `   * blended rate, derived from the combined total` : ''),
+    M, ry);
+    factsBottom = ry;
+  } else {
+    const facts = [
+      ['Unit code', unit.code],
+      ['Clinic number', String(unit.clinic)],
+      ['Floor', floor.label],
+      ['Type', unit.type],
+      ['Indoor area', `${unit.area} m²`],
+      ['Price per m²', unit.meterPrice ? fmtMoney(unit.meterPrice) : '—'],
+    ];
+    facts.forEach(([k, v], i) => {
+      const yy = y + i * 11;
+      doc.setFont('helvetica', 'normal').setFontSize(9);
+      setText(doc, MUTED);
+      doc.text(k.toUpperCase(), M, yy);
+      doc.setFont('helvetica', 'bold').setFontSize(12);
+      setText(doc, INK);
+      doc.text(v, M + 52, yy);
+      setDraw(doc, LINE); doc.setLineWidth(0.2);
+      doc.line(M, yy + 3.6, M + FACT_W, yy + 3.6);
+    });
+    factsBottom = y + (facts.length - 1) * 11 + 3.6;
+  }
 
   // Headline price block
   const bx = PW - M - 118;
@@ -398,7 +512,8 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
   doc.roundedRect(bx, y - 8, 118, 46, 3, 3, 'F');
   doc.setFont('helvetica', 'normal').setFontSize(9);
   setText(doc, [255, 255, 255]);
-  doc.text(plan.cash ? 'PRICE AFTER CASH DISCOUNT' : 'TOTAL UNIT PRICE', bx + 10, y + 2);
+  doc.text(plan.cash ? 'PRICE AFTER CASH DISCOUNT'
+    : unit.combined ? 'TOTAL COMBINED PRICE' : 'TOTAL UNIT PRICE', bx + 10, y + 2);
   doc.setFont('helvetica', 'bold').setFontSize(22);
   const headline = fmt(summary.netPrice);
   doc.text(headline, bx + 10, y + 15);
@@ -409,13 +524,18 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
   doc.setFont('helvetica', 'normal').setFontSize(10);
   doc.text(CONFIG.currency, bx + 10 + headlineW + 3, y + 15);
   doc.setFontSize(8.5);
+  /* On a combined offer the "area x rate" line is dropped: with two different
+   * rates the product does not equal the price being quoted above it, and a
+   * total that does not foot is the fastest way to lose a customer's trust. */
   doc.text(plan.cash
     ? `${pctLabel(plan.discount)} discount on ${fmt(summary.originalPrice)} ${CONFIG.currency}`
-    : `${unit.area} m² × ${fmt(unit.meterPrice || 0)} ${CONFIG.currency}/m²`, bx + 10, y + 24);
+    : unit.combined
+      ? `${unit.count} clinics  ·  ${unit.area} m² combined`
+      : `${unit.area} m² × ${fmt(unit.meterPrice || 0)} ${CONFIG.currency}/m²`, bx + 10, y + 24);
   doc.text(`Delivery ${CONFIG.deliveryMonths / 12} years from contract`, bx + 10, y + 31);
 
-  // Plan summary strip
-  y += 74;
+  // Plan summary strip, clear of whichever column runs longer.
+  y = Math.max(y + 74, factsBottom + 14);
   doc.setFont('helvetica', 'bold').setFontSize(11);
   setText(doc, BRAND_DARK);
   doc.text(`Selected plan — ${plan.label}`, M, y);
@@ -451,7 +571,8 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
        ['YOU SAVE', fmt(summary.discount), `off ${fmt(summary.originalPrice)}`],
        ['MAINTENANCE', fmt(summary.maintenance), `${pctLabel(CONFIG.maintenanceRate)} of the unit price`],
        ['TOTAL PAYABLE', fmt(summary.totalPayable), CONFIG.currency, true]]
-    : [['CONTRACT PRICE', fmt(summary.netPrice), `${unit.area} m² clinic`],
+    : [['CONTRACT PRICE', fmt(summary.netPrice),
+      unit.combined ? `${unit.area} m² · ${unit.count} clinics` : `${unit.area} m² clinic`],
        ['DOWN PAYMENT', fmt(summary.downPayment),
         summary.downParts.length > 1
           ? `${pctLabel(summary.downPct)} in ${summary.downParts.length} parts`
@@ -598,9 +719,17 @@ async function buildOfferPDF(unit, plan, floor, contractDate = new Date()) {
 
   /* ---------- 7. terms ---------- */
   doc.addPage(); page++;
-  header(doc, 'Terms & Notes', `Unit ${unit.code}`);
+  header(doc, 'Terms & Notes', `${unit.combined ? 'Units' : 'Unit'} ${unit.code}`);
   y = sectionTitle(doc, 'Terms', 34);
   const terms = [
+    /* State the combination first. Everything below quotes one price, and the
+     * customer needs to know up front that it covers more than one clinic. */
+    ...(unit.combined ? [
+      `This offer covers ${unit.count} clinics on the ${floor.label.toLowerCase()} — `
+      + `${unit.units.map((p) => `${p.code} (${p.area} m²)`).join(', ')} — offered together as a `
+      + `single ${unit.area} m² unit. All figures below are for the clinics combined, and they `
+      + `are offered as one transaction rather than individually.`,
+    ] : []),
     `Delivery is ${CONFIG.deliveryMonths / 12} years from the date of contract.`,
     `Maintenance is ${pctLabel(CONFIG.maintenanceRate)} of the original unit price, payable one year before delivery.`,
     `Instalments are payable quarterly, beginning three months after the contract date of ${fmtDate(contractDate)}.`,

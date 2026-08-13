@@ -125,6 +125,45 @@ h2 { font-size: 18px; margin: 0; font-weight: 650; }
 .pill.ok { background: var(--ok-bg); color: var(--ok); }
 .pill.soon { background: #eef2f5; color: var(--muted); }
 
+/* ---------- the running selection ----------
+   Two clinics sold together produce one price, so the agent has to be able to
+   see at a glance exactly what is in the offer before issuing it. */
+.picked {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  background: #f0fbfd; border: 1px solid var(--brand); border-radius: 12px;
+  padding: 10px 12px; margin-bottom: 14px;
+}
+.picked-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: #fff; border: 1px solid var(--line); border-radius: 999px;
+  padding: 5px 6px 5px 12px; font-size: 13px;
+}
+.chip b { letter-spacing: .02em; }
+.chip span { color: var(--muted); font-size: 12px; }
+.chip-x {
+  border: 0; cursor: pointer; width: 20px; height: 20px; border-radius: 50%;
+  background: #eef2f5; color: var(--muted); font: inherit; font-size: 15px; line-height: 1;
+  display: grid; place-items: center; padding: 0;
+}
+.chip-x:hover { background: var(--sold); color: #fff; }
+.picked-sum { display: flex; align-items: baseline; gap: 12px; margin-left: auto; }
+.picked-count { font-size: 12.5px; font-weight: 650; color: var(--brand-dark); }
+.picked-area { font-size: 12.5px; color: var(--muted); }
+.picked-price { font-size: 17px; color: var(--brand-ink); font-variant-numeric: tabular-nums; }
+.picked-clear {
+  font: inherit; font-size: 12.5px; cursor: pointer; border: 1px solid var(--line);
+  background: #fff; color: var(--muted); border-radius: 8px; padding: 6px 12px;
+}
+.picked-clear:hover { border-color: var(--sold); color: var(--sold); }
+@media (max-width: 560px) { .picked-sum { margin-left: 0; } }
+
+/* Removing is a destructive action, so it does not wear the primary colour. */
+.pop button.remove { background: #fff; color: var(--sold); box-shadow: inset 0 0 0 1px var(--line); }
+.pop button.remove:hover { background: var(--sold); color: #fff; }
+
+.kv-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
 /* ---------- plan ---------- */
 .plan-grid { display: grid; grid-template-columns: 1fr 300px; gap: 18px; align-items: start; }
 @media (max-width: 900px) { .plan-grid { grid-template-columns: 1fr; } }
@@ -144,6 +183,21 @@ h2 { font-size: 18px; margin: 0; font-weight: 650; }
 .pin.on { fill: var(--brand); stroke: var(--brand-ink); stroke-width: 5; }
 
 .pin.hl { r: 21; stroke: var(--brand-ink); stroke-width: 5; }
+
+/* Traced room outlines. Used wherever the geometry has been verified against
+   the drawing — a shaded room shows that two clinics adjoin, which is what a
+   combined offer has to communicate and what a pair of dots cannot. */
+.room { stroke-width: 2.5; stroke-linejoin: round; transition: fill-opacity .12s, stroke-width .12s; }
+.room.available { fill: var(--ok); fill-opacity: .30; stroke: var(--ok); cursor: pointer; }
+.room.available:hover { fill-opacity: .48; stroke-width: 4; }
+.room.reserved { fill: #e8ab00; fill-opacity: .28; stroke: #e8ab00; cursor: not-allowed; }
+.room.sold { fill: var(--sold); fill-opacity: .30; stroke: var(--sold); cursor: not-allowed; }
+.room.held { fill: #7f8c96; fill-opacity: .28; stroke: #7f8c96; stroke-dasharray: 7 5; cursor: not-allowed; }
+/* Not released: outline only, so unsold stock never competes with what is on offer. */
+.room.unreleased { fill: #c3ced6; fill-opacity: .10; stroke: #c3ced6; stroke-width: 1.5; cursor: not-allowed; }
+.room.on { fill: var(--brand); fill-opacity: .55; stroke: var(--brand-ink); stroke-width: 5; }
+.room.hl { fill-opacity: .5; stroke: var(--brand-ink); stroke-width: 4.5; }
+.room-dot { fill: #fff; stroke: var(--brand-ink); stroke-width: 2.5; pointer-events: none; }
 
 /* hover card on a pin */
 .pop {

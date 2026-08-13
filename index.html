@@ -63,8 +63,11 @@
     <div class="step-head">
       <span class="step-num">3</span>
       <h2>Choose a clinic</h2>
-      <span class="step-hint">Click a green pin on the plan, or pick from the list.</span>
+      <span class="step-hint">Click a green room on the plan, or pick from the list. Pick more than one to offer them combined.</span>
     </div>
+    <!-- The running selection. Populated by renderPicked(); it is the only thing
+         standing between an agent and issuing a two-clinic offer by mistake. -->
+    <div class="picked hidden" id="picked"></div>
     <div class="plan-grid">
       <div>
         <div class="plan-wrap" id="planWrap">
@@ -72,11 +75,13 @@
           <svg id="planSvg" viewBox="0 0 1461 1169" preserveAspectRatio="xMidYMid meet"></svg>
           <div class="pop" id="pop"></div>
         </div>
+        <!-- Square swatches: rooms are shaded outlines now, not dots. -->
         <div class="legend">
-          <span><i style="background:#1f9d63;border-radius:50%"></i>Available</span>
-          <span><i style="background:#e8ab00;border-radius:50%"></i>Reserved</span>
-          <span><i style="background:#d13c33;border-radius:50%"></i>Sold</span>
-          <span><i style="background:#c3ced6;border-radius:50%"></i>Not released</span>
+          <span><i style="background:#1f9d63"></i>Available</span>
+          <span><i style="background:#e8ab00"></i>Reserved</span>
+          <span><i style="background:#d13c33"></i>Sold</span>
+          <span><i style="background:#c3ced6"></i>Not released</span>
+          <span><i style="background:#12a8cb;outline:2px solid #0a3a48;outline-offset:-2px"></i>In this offer</span>
         </div>
       </div>
       <div class="card">

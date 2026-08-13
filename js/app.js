@@ -8,11 +8,19 @@ const state = {
   warnings: [],
   errors: [],
   floorKey: null,
-  unit: null,
+  /* The clinics in the offer being built. Usually one, but brokers sell two
+   * adjacent clinics as a single larger suite, so this is a list and the offer
+   * is built from combineUnits(). Always on one floor: it is cleared whenever
+   * the floor or project changes. */
+  picked: [],
   planId: CONFIG.plans[0] ? CONFIG.plans[0].id : null,
   sortBy: 'clinic',
   contractDate: new Date(),   // proposal date: every due date is derived from it
 };
+
+/** The single priced thing the schedule and the PDF are built from. */
+const offerUnit = () => (state.picked.length ? combineUnits(state.picked) : null);
+const isPicked = (u) => state.picked.some((p) => p.code === u.code);
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -112,7 +120,7 @@ async function selectProject(id) {
   if (state.projectId === id) return;
   state.projectId = id;
   state.floorKey = null;
-  state.unit = null;
+  state.picked = [];
   setProject(id);
   state.planId = CONFIG.plans[0] ? CONFIG.plans[0].id : null;
 
@@ -163,10 +171,13 @@ function renderFloors() {
 
 function selectFloor(key) {
   state.floorKey = key;
-  state.unit = null;
+  // Clinics in one offer must be on one floor, so changing floor starts over
+  // rather than silently carrying a selection the offer could not include.
+  state.picked = [];
   renderFloors();
   renderPlan();
   renderUnits();
+  renderPicked();
   $('planStep').classList.remove('hidden');
   $('detailStep').classList.add('hidden');
   $('planStep').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -214,35 +225,61 @@ function renderPlan() {
 
   const byClinic = new Map(unitsOnFloor(state.floorKey).map((u) => [u.clinic, u]));
 
-  // Pins, not outlined rooms — see the note in js/plan.js. Drawn in state order
-  // so available pins sit above the greyed ones and never get overlapped.
+  /* Rooms are drawn as their traced outlines where the geometry has been
+   * verified, and as pins where it hasn't. Outlines are what let a customer see
+   * that two clinics adjoin, which is the point of a combined offer; a pin can
+   * only say "here". Drawn in state order so available rooms sit above the
+   * greyed ones and keep their full outline. */
   const order = { unreleased: 0, sold: 1, held: 1, reserved: 2, available: 3 };
   const entries = Object.entries(P.pins)
     .map(([n, pin]) => ({ n: Number(n), pin, unit: byClinic.get(Number(n)) }))
     .map((e) => ({ ...e, cls: e.unit ? e.unit.state : 'unreleased' }))
     .sort((a, b) => order[a.cls] - order[b.cls]);
 
+  const useOutlines = P.outlines && P.polygons;
+
   for (const { n, pin, unit, cls } of entries) {
-    const selected = state.unit && state.unit.clinic === n;
-    const c = document.createElementNS(SVG_NS, 'circle');
-    c.setAttribute('cx', pin.x);
-    c.setAttribute('cy', pin.y);
-    c.setAttribute('r', selected ? P.pinRsel : P.pinR);
-    c.setAttribute('class', 'pin ' + cls + (selected ? ' on' : ''));
+    const selected = state.picked.some((p) => p.clinic === n);
+    const room = useOutlines && P.polygons[n];
+
+    let shape;
+    if (room) {
+      shape = document.createElementNS(SVG_NS, 'polygon');
+      shape.setAttribute('points', room.map((p) => p.join(',')).join(' '));
+      shape.setAttribute('class', 'room ' + cls + (selected ? ' on' : ''));
+    } else {
+      shape = document.createElementNS(SVG_NS, 'circle');
+      shape.setAttribute('cx', pin.x);
+      shape.setAttribute('cy', pin.y);
+      shape.setAttribute('r', selected ? P.pinRsel : P.pinR);
+      shape.setAttribute('class', 'pin ' + cls + (selected ? ' on' : ''));
+    }
 
     const title = document.createElementNS(SVG_NS, 'title');
     title.textContent = unit
       ? `${unit.code} · Clinic ${n} · ${unit.area} m² · ${unit.state === 'available' ? fmtMoney(unit.price) : (unit.heldReason ? 'On hold' : unit.status)}`
       : `Clinic ${n} · ${P.areas[n]} m² · Not released`;
-    c.appendChild(title);
+    shape.appendChild(title);
 
-    pinEls.set(n, c);
+    pinEls.set(n, shape);
     if (unit) {
-      c.addEventListener('mouseenter', () => showPop(unit, pin));
-      c.addEventListener('mouseleave', schedulePopHide);
-      if (unit.state === 'available') c.onclick = () => selectUnit(unit);
+      shape.addEventListener('mouseenter', () => showPop(unit, pin));
+      shape.addEventListener('mouseleave', schedulePopHide);
+      if (unit.state === 'available') shape.onclick = () => toggleUnit(unit);
     }
-    svg.appendChild(c);
+    svg.appendChild(shape);
+
+    /* A tick in the middle of a selected room. Two shaded rooms on a busy
+     * render can read as one large area, and the agent needs to be able to
+     * count what is in the offer at a glance. */
+    if (selected && room) {
+      const dot = document.createElementNS(SVG_NS, 'circle');
+      dot.setAttribute('cx', pin.x);
+      dot.setAttribute('cy', pin.y);
+      dot.setAttribute('r', Math.max(5, P.pinR * 0.42));
+      dot.setAttribute('class', 'room-dot');
+      svg.appendChild(dot);
+    }
   }
 }
 
@@ -273,8 +310,13 @@ function showPop(unit, pin) {
 
   if (unit.state === 'available') {
     pop.appendChild(el('div', 'pop-price', fmtMoney(unit.price)));
-    const btn = el('button', null, 'Select this clinic');
-    btn.onclick = () => { hidePop(); selectUnit(unit); };
+    /* The label has to say what the click will do. Once one clinic is in the
+     * offer the same button is how a second gets added, which is the only cue
+     * an agent gets that combining is possible at all. */
+    const on = isPicked(unit);
+    const btn = el('button', on ? 'remove' : null,
+      on ? 'Remove from offer' : state.picked.length ? 'Add to this offer' : 'Select this clinic');
+    btn.onclick = () => { hidePop(); toggleUnit(unit); };
     pop.appendChild(btn);
   } else {
     const label = unit.state === 'reserved' ? 'Reserved' : unit.state === 'held' ? 'On hold' : 'Sold';
@@ -333,14 +375,14 @@ function renderUnits() {
   }
 
   for (const u of units) {
-    const btn = el('button', 'unit' + (state.unit && state.unit.code === u.code ? ' on' : ''));
+    const btn = el('button', 'unit' + (isPicked(u) ? ' on' : ''));
     const left = el('div');
     left.appendChild(el('div', 'unit-code', u.code));
     left.appendChild(el('div', 'unit-sub',
       `Clinic ${u.clinic} · ${u.area} m²${u.meterPrice ? ` · ${fmt(u.meterPrice)}/m²` : ''}`));
     btn.appendChild(left);
     btn.appendChild(el('div', 'unit-price', fmtMoney(u.price)));
-    btn.onclick = () => selectUnit(u);
+    btn.onclick = () => toggleUnit(u);
     // Scanning the list rings the matching pin, so the agent never has to hunt
     // for a code on the drawing.
     btn.addEventListener('mouseenter', () => highlightPin(u.clinic, true));
@@ -349,32 +391,99 @@ function renderUnits() {
   }
 }
 
-function selectUnit(unit) {
-  state.unit = unit;
+/**
+ * Put a clinic in the offer, or take it out again.
+ *
+ * Clicking is a toggle rather than a replace, because that is the only way to
+ * build a two-clinic offer without a separate mode to explain to the sales
+ * team. The running selection is shown above the plan so nobody issues a
+ * two-clinic offer thinking they picked one.
+ */
+function toggleUnit(unit) {
+  if (isPicked(unit)) {
+    state.picked = state.picked.filter((p) => p.code !== unit.code);
+  } else {
+    if (state.picked.length && state.picked[0].floor !== unit.floor) return;
+    state.picked = [...state.picked, unit].sort((a, b) => a.clinic - b.clinic);
+  }
+
   renderPlan();
   renderUnits();
+  renderPicked();
+
+  if (!state.picked.length) {
+    $('detailStep').classList.add('hidden');
+    return;
+  }
+  const firstPick = state.picked.length === 1;
   renderDetail();
   $('detailStep').classList.remove('hidden');
-  $('detailStep').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Only jump down on the first pick. Scrolling away mid-selection would take
+  // the plan off screen just as the agent reaches for the second clinic.
+  if (firstPick) $('detailStep').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/** The running selection above the plan: what is in the offer, and its totals. */
+function renderPicked() {
+  const box = $('picked');
+  if (!state.picked.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+
+  const o = offerUnit();
+  box.innerHTML = '';
+  box.classList.remove('hidden');
+
+  const chips = el('div', 'picked-chips');
+  for (const u of state.picked) {
+    const chip = el('span', 'chip');
+    chip.appendChild(el('b', null, u.code));
+    chip.appendChild(el('span', null, `${u.area} m²`));
+    const x = el('button', 'chip-x');
+    x.textContent = '×';
+    x.title = `Remove ${u.code} from this offer`;
+    x.setAttribute('aria-label', `Remove ${u.code} from this offer`);
+    x.onclick = () => toggleUnit(u);
+    chip.appendChild(x);
+    chips.appendChild(chip);
+  }
+  box.appendChild(chips);
+
+  const sum = el('div', 'picked-sum');
+  sum.appendChild(el('span', 'picked-count',
+    o.combined ? `${o.count} clinics combined` : '1 clinic'));
+  sum.appendChild(el('span', 'picked-area', `${o.area} m²`));
+  sum.appendChild(el('b', 'picked-price', fmtMoney(o.price)));
+  box.appendChild(sum);
+
+  const clear = el('button', 'picked-clear', 'Clear');
+  clear.onclick = () => {
+    state.picked = [];
+    renderPlan(); renderUnits(); renderPicked();
+    $('detailStep').classList.add('hidden');
+  };
+  box.appendChild(clear);
 }
 
 /* ---------------- step 3: plan + schedule ---------------- */
 function renderDetail() {
-  const u = state.unit;
+  const u = offerUnit();
+  if (!u) return;
   const top = $('detailTop');
   top.innerHTML = '';
-  const kv = (label, value, brand) => {
+  const kv = (label, value, brand, sub) => {
     const d = el('div');
     d.appendChild(el('div', 'kv-label', label));
     d.appendChild(el('div', 'kv-value' + (brand ? ' brand' : ''), value));
+    if (sub) d.appendChild(el('div', 'kv-sub', sub));
     top.appendChild(d);
   };
-  kv('Unit', u.code);
-  kv('Clinic', `No. ${u.clinic}`);
+  kv(u.combined ? 'Units' : 'Unit', u.code);
+  kv(u.combined ? 'Clinics' : 'Clinic', `No${u.combined ? 's' : ''}. ${listAnd(u.clinics)}`);
   kv('Floor', CONFIG.floors.find((f) => f.key === state.floorKey).label);
-  kv('Area', `${u.area} m²`);
-  kv('Price per m²', u.meterPrice ? fmtMoney(u.meterPrice) : '—');
-  kv('Unit price', fmtMoney(u.price), true);
+  kv(u.combined ? 'Combined area' : 'Area', `${u.area} m²`,
+    false, u.combined ? u.units.map((x) => `${x.area}`).join(' + ') + ' m²' : null);
+  kv('Price per m²', u.meterPrice ? fmtMoney(u.meterPrice) : '—',
+    false, u.blendedRate ? 'blended across the clinics' : null);
+  kv(u.combined ? 'Combined price' : 'Unit price', fmtMoney(u.price), true);
 
   const box = $('plans');
   box.innerHTML = '';
@@ -405,20 +514,23 @@ function renderDetail() {
   }
 
   renderSchedule();
-  $('downloadNote').textContent = `${u.code} · ${CONFIG.plans.find((p) => p.id === state.planId).label}`;
+  $('downloadNote').textContent = `${u.code} · ${CONFIG.plans.find((p) => p.id === state.planId).label}`
+    + (u.combined ? ` · ${u.count} clinics combined` : '');
 }
 
 /** The four headline numbers above the schedule — what the customer asks first. */
 function renderScheduleCards(plan, summary) {
   const box = $('schedCards');
   box.innerHTML = '';
+  const o = offerUnit();
+  const sizeNote = o.combined ? `${o.area} m² · ${o.count} clinics` : `${o.area} m² clinic`;
 
   const cards = plan.cash
     ? [['Cash price', fmt(summary.netPrice), `after ${pctLabel(plan.discount)} discount`],
        ['You save', fmt(summary.discount), `off ${fmt(summary.originalPrice)} ${CONFIG.currency}`],
        ['Maintenance', fmt(summary.maintenance), `${pctLabel(CONFIG.maintenanceRate)} of the unit price`],
        ['Total payable', fmt(summary.totalPayable), CONFIG.currency, true]]
-    : [['Contract price', fmt(summary.netPrice), `${state.unit.area} m² clinic`],
+    : [['Contract price', fmt(summary.netPrice), sizeNote],
        ['Down payment', fmt(summary.downPayment),
         summary.downParts && summary.downParts.length > 1
           ? `${pctLabel(summary.downPct)} in ${summary.downParts.length} parts`
@@ -439,7 +551,7 @@ function renderScheduleCards(plan, summary) {
 
 function renderSchedule() {
   const plan = CONFIG.plans.find((p) => p.id === state.planId);
-  const { rows, summary } = buildSchedule(state.unit, plan, state.contractDate);
+  const { rows, summary } = buildSchedule(offerUnit(), plan, state.contractDate);
   renderScheduleCards(plan, summary);
 
   const t = $('sched');
@@ -447,7 +559,8 @@ function renderSchedule() {
   $('schedNote').textContent =
     `Dates run from the contract date, ${fmtDate(summary.contractDate)} — the day this proposal is made. `
     + `Delivery ${CONFIG.deliveryMonths / 12} years from contract. `
-    + `Percentages are of the ${fmt(summary.originalPrice)} ${CONFIG.currency} unit price.`;
+    + `Percentages are of the ${fmt(summary.originalPrice)} ${CONFIG.currency} `
+    + `${offerUnit().combined ? 'combined price' : 'unit price'}.`;
 
   const thead = el('thead');
   const hr = el('tr');
@@ -529,62 +642,116 @@ async function load() {
   const res = await loadInventory(activePlan().areas);
   Object.assign(state, res);
 
-  // Keep the current selection only if it is still available in the new data.
-  if (state.unit) {
-    const again = state.units.find((u) => u.code === state.unit.code && u.state === 'available');
-    state.unit = again || null;
-    if (!again) $('detailStep').classList.add('hidden');
+  /* Keep each picked clinic only if it is still available in the new data, and
+   * say which ones went. Silently dropping one would leave the agent looking at
+   * a total that no longer matches what they think they are selling. */
+  if (state.picked.length) {
+    const kept = [], lost = [];
+    for (const p of state.picked) {
+      const again = state.units.find((u) => u.code === p.code && u.state === 'available');
+      (again ? kept : lost).push(again || p);
+    }
+    state.picked = kept;
+    if (lost.length) {
+      state.warnings = [`${lost.map((u) => u.code).join(', ')} `
+        + `${lost.length === 1 ? 'is' : 'are'} no longer available and `
+        + `${lost.length === 1 ? 'has' : 'have'} been removed from this offer.`,
+        ...state.warnings];
+    }
+    if (!kept.length) $('detailStep').classList.add('hidden');
   }
 
   renderSync();
   renderWarnings();
   renderFloors();
   if (state.floorKey) { renderPlan(); renderUnits(); }
-  if (state.unit) renderDetail();
+  renderPicked();
+  if (state.picked.length) renderDetail();
   openFromHash();
 }
 
-/** Split "#mc9/MC924" or "#C313" into { projectId, code }. */
+/**
+ * Split "#mc9/MC924" or "#C313" into { project, codes }.
+ *
+ * Codes may be joined with "+" — "#C313+C314" is the combined offer for both,
+ * so a two-clinic proposal can be shared as one link the same as a single one.
+ */
 function parseHash() {
   const raw = decodeURIComponent(location.hash.replace('#', '')).trim();
   if (!raw) return {};
   const [a, b] = raw.split('/');
   const byId = (v) => PROJECTS.find((p) => p.live && p.id.toLowerCase() === String(v).toLowerCase());
-  if (b !== undefined) return { project: byId(a), code: b.toUpperCase() };
+  const codesIn = (v) => v.split('+').map((c) => c.trim().toUpperCase()).filter(Boolean);
+  if (b !== undefined) return { project: byId(a), codes: codesIn(b) };
   const asProject = byId(a);
-  return asProject ? { project: asProject } : { code: a.toUpperCase() };
+  return asProject ? { project: asProject } : { codes: codesIn(a) };
 }
 
 /** #mc9/MC924 opens straight to that unit, so an offer can be shared as a link. */
 function openFromHash() {
-  const { code } = parseHash();
-  if (!code || (state.unit && state.unit.code === code)) return;
-  const unit = state.units.find((u) => u.code === code && u.state === 'available');
-  if (!unit) {
-    // A shared link can outlive the unit — say so rather than silently doing
-    // nothing, which reads as the link being broken.
-    const known = state.units.find((u) => u.code === code);
-    state.warnings = [known
-      ? `${code} is no longer available (${known.status}). Pick another clinic below.`
-      : `${code} is not in the current inventory. Pick a clinic below.`,
-      ...state.warnings];
-    renderWarnings();
-    return;
+  const { codes } = parseHash();
+  if (!codes || !codes.length) return;
+  const already = state.picked.map((u) => u.code).join('+');
+  if (already === codes.join('+')) return;
+
+  const found = [], missing = [];
+  for (const code of codes) {
+    const unit = state.units.find((u) => u.code === code && u.state === 'available');
+    if (unit) found.push(unit);
+    else {
+      // A shared link can outlive the unit — say so rather than silently doing
+      // nothing, which reads as the link being broken.
+      const known = state.units.find((u) => u.code === code);
+      missing.push(known
+        ? `${code} is no longer available (${known.status}).`
+        : `${code} is not in the current inventory.`);
+    }
   }
-  const floor = CONFIG.floors.find((f) => floorNumber(f.key) === unit.floor);
+  if (missing.length) {
+    state.warnings = [`${missing.join(' ')} Pick a clinic below.`, ...state.warnings];
+    renderWarnings();
+  }
+  if (!found.length) return;
+
+  // A link naming clinics on two floors cannot be one offer; keep the first
+  // floor's and say so, rather than dropping the lot.
+  const floorOf = found[0].floor;
+  const offFloor = found.filter((u) => u.floor !== floorOf);
+  if (offFloor.length) {
+    state.warnings = [`${offFloor.map((u) => u.code).join(', ')} `
+      + `${offFloor.length === 1 ? 'is' : 'are'} on another floor, so `
+      + `${offFloor.length === 1 ? 'it was' : 'they were'} left out — `
+      + 'clinics in one offer must share a floor.', ...state.warnings];
+    renderWarnings();
+  }
+  const picks = found.filter((u) => u.floor === floorOf);
+
+  const floor = CONFIG.floors.find((f) => floorNumber(f.key) === floorOf);
   if (!floor || !floor.plan) return;
   state.floorKey = floor.key;
+  state.picked = [...picks].sort((a, b) => a.clinic - b.clinic);
   renderFloors();
   renderPlan();
   renderUnits();
-  selectUnit(unit);
+  renderPicked();
+  renderDetail();
   $('planStep').classList.remove('hidden');
+  $('detailStep').classList.remove('hidden');
+  $('detailStep').scrollIntoView({ behavior: 'smooth', block: 'start' });
   // Opening a shared link should show what was shared, not just move the map.
-  showPop(unit, activePlan().pins[unit.clinic]);
+  showPop(picks[0], activePlan().pins[picks[0].clinic]);
 }
 
 window.addEventListener('hashchange', () => {
-  if (state.projectId) openFromHash();
+  if (!state.projectId) return;
+  /* A hash pointing at another project has to switch project first. Changing
+   * only the hash does not reload the page, so without this a link to
+   * #mc9/MC924 pasted into an already-open EMC session looked up a 9MC code in
+   * EMC's inventory and reported it missing. selectProject re-reads the hash
+   * once that project's inventory has loaded. */
+  const { project } = parseHash();
+  if (project && project.id !== state.projectId) { selectProject(project.id); return; }
+  openFromHash();
 });
 
 $('sortBy').onchange = (e) => { state.sortBy = e.target.value; renderUnits(); };
@@ -607,9 +774,9 @@ async function issueOffer(share) {
   buttons.forEach((b) => { b.disabled = true; });
   (share ? $('share') : $('download')).textContent = 'Building PDF…';
   try {
-    if (share) await deliverOffer(state.unit, plan, floor, state.contractDate);
+    if (share) await deliverOffer(offerUnit(), plan, floor, state.contractDate);
     else {
-      const { doc, filename } = await buildOfferPDF(state.unit, plan, floor, state.contractDate);
+      const { doc, filename } = await buildOfferPDF(offerUnit(), plan, floor, state.contractDate);
       doc.save(filename);
     }
   } catch (err) {

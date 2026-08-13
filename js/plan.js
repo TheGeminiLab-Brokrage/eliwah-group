@@ -19,58 +19,63 @@
 const PLAN_REF_W = 1461;
 const PLAN_REF_H = 1169;
 
-/* ---- top row (clinics 34..24), left to right along a shallow arc ---------- */
-const TOP_ROW = [
-  [34, 437, 511], [33, 512, 564], [32, 565, 620], [31, 622, 678], [30, 680, 737],
-  [29, 739, 795], [28, 797, 852], [27, 854, 910], [26, 912, 967], [25, 969, 1022],
-  [24, 1024, 1090],
-];
-const TOP_X0 = 437, TOP_X1 = 1090, TOP_Y = 76, TOP_H = 108, TOP_ARC = 9;
-const topEdge = (x) => TOP_Y - TOP_ARC * Math.sin(Math.PI * (x - TOP_X0) / (TOP_X1 - TOP_X0));
-
-/* ---- explicit polygons for everything else ------------------------------- */
-const rectPoly = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
-
+/* Room outlines, traced by hand off the 300dpi render with scripts/make-tracer.js
+ * (2026-08-13). Every room is an explicit polygon — the top row used to be
+ * generated from a fitted arc, which was close but never matched the drawn
+ * walls; measured corners beat a curve fitted by eye.
+ *
+ * Checked as a set, not by spot check: each outline's area agrees with the m²
+ * printed in its room to within a few percent of the others, each contains the
+ * pin the app already used, and none overlaps a neighbour. */
 const POLYGONS = {
-  // Inner top row, below the lobby (left to right: 12, 11, 10, 9, 8)
-  12: rectPoly(640, 248, 84, 84),
-  11: rectPoly(725, 250, 94, 84),
-  10: rectPoly(820, 248, 96, 84),
-  9:  rectPoly(917, 246, 94, 86),
-  8:  [[1013, 243], [1101, 236], [1101, 326], [1013, 331]],
+  // Bottom-right wing
+  1: [[989, 986], [1071, 969], [1090, 1083], [1076, 1086], [1055, 1091], [1042, 1094], [1022, 1091], [1009, 1079], [1001, 1062]],
+
+  // Right wing, bottom to top — slanted strip. Clinic 2 is the deep corner room.
+  2: [[1055, 669], [1193, 624], [1205, 670], [1177, 710], [1174, 715], [1171, 734], [1082, 763]],
+  3: [[1037, 607], [1178, 562], [1192, 618], [1054, 663]],
+  4: [[1021, 546], [1159, 502], [1174, 556], [1037, 601]],
+  5: [[1004, 486], [1142, 442], [1157, 496], [1019, 541]],
+  6: [[988, 425], [1124, 380], [1140, 434], [1003, 478]],
+  7: [[964, 341], [1108, 321], [1123, 374], [985, 417]],
+
+  // Inner top row, below the lobby (right to left: 8, 9, 10, 11, 12)
+  8: [[1018, 239], [1082, 230], [1108, 315], [1028, 326]],
+  9: [[921, 249], [1012, 240], [1022, 327], [928, 339]],
+  10: [[823, 254], [915, 249], [922, 340], [825, 343]],
+  11: [[728, 252], [817, 254], [819, 341], [725, 342]],
+  12: [[630, 245], [722, 252], [719, 342], [626, 335]],
 
   // Left wing, top to bottom — slanted strip
-  13: [[434, 315], [581, 337], [569, 400], [424, 373]],
-  14: [[424, 373], [569, 400], [562, 462], [409, 433]],
-  15: [[409, 433], [562, 462], [550, 525], [395, 493]],
-  16: [[395, 493], [550, 525], [536, 587], [382, 555]],
-  17: [[382, 555], [536, 587], [522, 649], [366, 616]],
-  18: [[366, 616], [522, 649], [508, 719], [398, 730], [352, 668]],
+  13: [[437, 315], [581, 337], [566, 405], [425, 366]],
+  14: [[423, 373], [563, 411], [551, 468], [410, 427]],
+  15: [[409, 433], [548, 473], [536, 529], [395, 490]],
+  16: [[394, 496], [534, 535], [522, 590], [381, 552]],
+  17: [[380, 557], [519, 595], [506, 652], [367, 614]],
+  18: [[364, 620], [504, 659], [484, 749], [398, 728], [355, 663]],
 
-  // Right wing, top to bottom — slanted strip
-  7: [[963, 335], [1105, 324], [1126, 377], [982, 418]],
-  6: [[982, 418], [1126, 377], [1140, 433], [995, 473]],
-  5: [[995, 473], [1140, 433], [1155, 490], [1010, 530]],
-  4: [[1010, 530], [1155, 490], [1170, 547], [1025, 587]],
-  3: [[1025, 587], [1170, 547], [1185, 602], [1040, 643]],
-  // Clinic 2 is the deep corner room — chamfered where it meets the lift lobby.
-  2: [[1040, 643], [1185, 602], [1215, 668], [1160, 716], [1070, 742]],
+  // Bottom-left wing. 19 and 21 follow the building's rounded outer corners.
+  19: [[269, 938], [368, 954], [382, 955], [413, 958], [412, 970], [407, 994], [406, 1009], [401, 1040], [400, 1054], [397, 1075], [350, 1067], [331, 1063], [316, 1054], [305, 1042], [295, 1021], [281, 994], [272, 976], [268, 961]],
+  20: [[419, 958], [495, 964], [481, 1085], [403, 1076]],
+  21: [[501, 965], [581, 970], [572, 1046], [570, 1063], [567, 1076], [560, 1086], [546, 1094], [531, 1095], [515, 1092], [487, 1088]],
 
-  // Bottom-left wing
-  19: [[270, 950], [400, 946], [404, 1078], [274, 1082]],
-  20: rectPoly(404, 950, 87, 130),
-  21: [[493, 952], [572, 956], [572, 1082], [493, 1080]],
+  // Bottom-right wing continued
+  22: [[1076, 968], [1152, 955], [1171, 1068], [1096, 1082]],
+  23: [[1157, 953], [1298, 929], [1299, 944], [1298, 958], [1289, 982], [1278, 1006], [1272, 1024], [1263, 1036], [1254, 1046], [1242, 1054], [1217, 1060], [1177, 1066]],
 
-  // Bottom-right wing
-  1:  [[993, 962], [1076, 957], [1076, 1086], [993, 1090]],
-  22: rectPoly(1078, 953, 83, 128),
-  23: [[1163, 944], [1287, 936], [1287, 1068], [1163, 1077]],
+  // Top row (24 right, 34 left), following the shallow arc of the facade
+  24: [[1028, 76], [1046, 176], [1109, 169], [1100, 122], [1093, 100], [1084, 89], [1072, 79], [1060, 74], [1043, 73]],
+  25: [[978, 85], [1022, 79], [1038, 181], [986, 186]],
+  26: [[919, 89], [970, 85], [979, 187], [925, 191]],
+  27: [[861, 94], [913, 91], [916, 193], [865, 194]],
+  28: [[802, 95], [852, 94], [855, 196], [804, 196]],
+  29: [[745, 94], [796, 94], [795, 196], [742, 196]],
+  30: [[687, 91], [739, 94], [736, 194], [683, 193]],
+  31: [[629, 86], [680, 90], [675, 193], [621, 188]],
+  32: [[573, 80], [621, 85], [614, 185], [561, 181]],
+  33: [[522, 71], [566, 79], [554, 179], [501, 172]],
+  34: [[491, 172], [516, 70], [485, 67], [472, 70], [460, 76], [449, 88], [442, 103], [439, 115], [430, 155], [449, 163]],
 };
-
-for (const [n, x0, x1] of TOP_ROW) {
-  const t0 = topEdge(x0), t1 = topEdge(x1);
-  POLYGONS[n] = [[x0, t0], [x1, t1], [x1, t1 + TOP_H], [x0, t0 + TOP_H]];
-}
 
 /** m² printed on the drawing, used only to cross-check the sheet. */
 const CLINIC_AREAS = {
@@ -82,11 +87,8 @@ const CLINIC_AREAS = {
 
 /* Pin position for each clinic.
  *
- * The plan is shown as circular pins rather than outlined rooms: the traced
- * polygons are close but not exact, and a highlight that is a few pixels off a
- * wall reads as sloppy in front of a customer. A pin sitting in the middle of
- * the room is unambiguous at any zoom, and the drawing already labels every
- * room with its number and area.
+ * Rooms are now drawn as outlines, but the pin is still what a hover card
+ * hangs off and what the PDF falls back to, so every room keeps one.
  *
  * Area-weighted centroid, so the chamfered rooms (2 and 18) pin inside
  * themselves rather than drifting toward the cut corner.
@@ -166,6 +168,65 @@ const MC9_AREAS = {
   29: 18, 30: 17, 31: 19, 32: 19, 33: 19, 34: 19, 35: 19, 36: 19, 37: 34,
 };
 
+/* Room outlines, traced by hand with scripts/make-tracer.js (2026-08-13).
+ * 9MC had never had any — it shipped with pins only.
+ *
+ * Validated as a set: every outline contains the pin that was placed
+ * independently off the drawing, and no two overlap.
+ *
+ * Clinics 22 and 23 trace about a third larger than the 19 m² printed on the
+ * drawing, landing near 25 m². That is not a tracing error — operations have
+ * separately said those rooms are 23 m² and that the drawing is wrong (see the
+ * README). The traced geometry is now a third, independent piece of evidence
+ * that the DRAWING is the thing needing correction. MC9_AREAS still records
+ * what the drawing prints, so the sheet cross-check keeps flagging it. */
+const MC9_POLYGONS = {
+  // Right-hand column, top to bottom
+  1: [[978, 138], [1055, 113], [1038, 201], [967, 183]],
+  2: [[1055, 113], [1107, 97], [1119, 97], [1129, 103], [1137, 110], [1141, 120], [1138, 137], [1126, 203], [1070, 189], [1062, 211], [1038, 201]],
+  3: [[1060, 243], [1113, 258], [1123, 205], [1071, 191]],
+  4: [[1041, 242], [1031, 290], [1103, 311], [1112, 262]],
+  5: [[1020, 340], [1091, 360], [1101, 316], [1030, 297]],
+  6: [[1019, 347], [1009, 390], [1081, 411], [1089, 367]],
+  7: [[980, 429], [980, 530], [1058, 531], [1080, 420], [1007, 398], [1007, 402]],
+
+  // Long bottom row, right to left
+  8: [[976, 429], [977, 530], [939, 529], [939, 417], [959, 417]],
+  9: [[897, 417], [897, 530], [933, 532], [931, 418]],
+  10: [[854, 417], [854, 532], [893, 532], [893, 417]],
+  11: [[812, 417], [849, 417], [851, 532], [812, 532]],
+  12: [[767, 417], [808, 417], [808, 532], [767, 532]],
+  13: [[724, 417], [724, 530], [764, 530], [765, 417]],
+  14: [[681, 417], [681, 530], [720, 531], [720, 417]],
+  15: [[635, 417], [635, 531], [676, 531], [676, 417]],
+  16: [[592, 417], [592, 531], [631, 531], [632, 416]],
+  17: [[549, 416], [549, 531], [588, 531], [588, 416]],
+  18: [[505, 417], [505, 531], [543, 530], [544, 417]],
+  19: [[461, 416], [460, 531], [500, 530], [501, 416]],
+  20: [[416, 417], [416, 530], [454, 531], [455, 417]],
+  21: [[369, 417], [410, 417], [409, 531], [369, 531]],
+  22: [[322, 417], [322, 530], [364, 530], [365, 417]],
+  23: [[273, 416], [317, 416], [317, 530], [273, 530]],
+
+  // Left group — 24 and 25 wrap the building's rounded south-west corner
+  24: [[172, 369], [95, 369], [92, 493], [97, 505], [105, 515], [113, 521], [122, 524], [137, 526], [149, 526], [220, 526], [222, 408], [211, 408], [172, 408]],
+  25: [[206, 273], [143, 295], [128, 301], [118, 307], [108, 314], [101, 325], [98, 333], [95, 346], [95, 362], [174, 365], [176, 353], [207, 353]],
+  26: [[258, 352], [242, 262], [209, 273], [210, 352]],
+  27: [[247, 261], [290, 246], [314, 352], [262, 352]],
+  28: [[295, 245], [346, 227], [378, 351], [318, 352]],
+
+  // Upper middle row, right to left
+  29: [[894, 275], [854, 275], [853, 368], [895, 368]],
+  30: [[810, 275], [811, 368], [850, 368], [850, 275]],
+  31: [[766, 275], [806, 275], [807, 367], [766, 367]],
+  32: [[720, 275], [722, 367], [763, 368], [761, 275]],
+  33: [[678, 275], [717, 275], [717, 368], [679, 367]],
+  34: [[635, 275], [635, 368], [675, 368], [674, 275]],
+  35: [[590, 275], [630, 275], [630, 367], [590, 367]],
+  36: [[546, 275], [584, 275], [584, 367], [546, 367]],
+  37: [[466, 296], [525, 274], [541, 274], [541, 367], [485, 366]],
+};
+
 /** "Second" -> "2ND", "Ninth" -> "9TH". Used to reprint a shared drawing's
  *  floor label with the floor actually being sold. */
 function floorOrdinal(key) {
@@ -186,7 +247,20 @@ const PLANS = {
     areas: CLINIC_AREAS,
     pins: CLINIC_PINS,
     pinR: 17, pinRsel: 23,
-    polygons: POLYGONS,      // kept: used by scripts/verify-plan.js
+    polygons: POLYGONS,
+
+    /* Whether `polygons` may be used to SHOW a room, in the app and in the PDF,
+     * instead of dropping a pin in it.
+     *
+     * The earlier outlines were traced against a low-resolution render and were
+     * close but not exact, so the app dropped a pin in the middle of the room
+     * instead — a highlight a few pixels off a wall reads as sloppy in front of
+     * a customer. Both plans were retraced against the 300dpi renders on
+     * 2026-08-13 and checked with verify-plan.js, so the rooms are now drawn.
+     *
+     * This matters more than it did: a combined offer has to show a customer
+     * that two clinics adjoin, which two dots cannot do. */
+    outlines: true,
 
     /* The supplied drawing has "MEDICAL FLOOR / 3ND" printed in the courtyard.
      * The second floor is the same layout, so it reuses this drawing — and that
@@ -208,7 +282,25 @@ const PLANS = {
     pins: Object.fromEntries(Object.entries(MC9_PINS_RAW).map(([n, [x, y]]) => [
       n, { n: Number(n), x, y, area: MC9_AREAS[n] },
     ])),
-    polygons: null,
+    polygons: MC9_POLYGONS,
+    outlines: true,
+
+    /* Rooms whose traced outline disagrees with the m² printed inside it by
+     * more than a quarter. Listed so the test suite guards against a NEW
+     * mismatch appearing without failing on the five already understood.
+     *
+     *  22, 23 — trace to about 25 m² against a printed 19 m². Operations have
+     *     already said these rooms are 23 m² and the drawing is wrong, so the
+     *     geometry is a third, independent witness for that.
+     *  1, 2, 3 — trace 29-44% SMALLER than their printed 38 / 61 / 27 m². The
+     *     outlines follow the drawn walls, so either those three labels are
+     *     wrong in the same way, or the rooms extend past what is drawn.
+     *     UNRESOLVED — needs MNHD/Eliwah to confirm. It does not affect any
+     *     price: the sheet is the authority for area and cost, and these
+     *     numbers are only ever cross-checked against it.
+     *
+     * Delete an entry once the drawing is corrected. */
+    areaMismatches: [1, 2, 3, 22, 23],
     // The 9MC drawing prints no floor name, so floors three to nine share it
     // as-is with nothing to correct.
     floorLabel: null,

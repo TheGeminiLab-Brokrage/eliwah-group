@@ -25,6 +25,81 @@
 
 const round = (n) => Math.round(n);
 
+/**
+ * Fold one or more clinics into the single priced thing an offer is made of.
+ *
+ * Brokers regularly sell two adjacent clinics as one larger suite — "two 18 m²
+ * units" — and the customer wants one price and one schedule, not two offers
+ * stapled together. Rather than teach the schedule maths and the PDF about
+ * lists, both keep taking ONE unit-shaped object; this builds it.
+ *
+ * A single clinic goes through here too, so there is one code path rather than
+ * two. In that case every field is the unit's own, untouched.
+ *
+ * Deliberate choices:
+ *  - `price` and `area` are plain sums. The sheet is the authority on each
+ *    unit's price, so nothing is recalculated.
+ *  - `meterPrice` is only carried across when every clinic shares the same
+ *    rate, which is the usual case for two units in one row. When they differ
+ *    it is DERIVED from the totals and flagged `blended`, because quoting one
+ *    clinic's rate against the combined area would misstate the offer.
+ *  - `state` is available only if EVERY part is. A combined offer must fail the
+ *    same way a single one does if any clinic has gone.
+ *
+ * @param {Array<Object>} units one or more sheet units, all on the same floor
+ * @returns {Object} a unit-shaped object with a `units` array attached
+ */
+function combineUnits(units) {
+  const list = [...units].sort((a, b) => a.clinic - b.clinic);
+  if (!list.length) throw new Error('An offer needs at least one clinic.');
+
+  const floors = new Set(list.map((u) => u.floor));
+  if (floors.size > 1) {
+    throw new Error('Clinics in one offer must be on the same floor.');
+  }
+  const dupes = list.map((u) => u.code).filter((c, i, a) => a.indexOf(c) !== i);
+  if (dupes.length) throw new Error(`${dupes[0]} is in this offer twice.`);
+
+  const area = list.reduce((s, u) => s + (u.area || 0), 0);
+  const price = list.reduce((s, u) => s + u.price, 0);
+
+  const rates = new Set(list.map((u) => u.meterPrice).filter(Boolean));
+  const sameRate = rates.size === 1 && list.every((u) => u.meterPrice);
+  const meterPrice = sameRate ? [...rates][0] : (area ? round(price / area) : 0);
+
+  const unavailable = list.find((u) => u.state !== 'available');
+
+  return {
+    units: list,
+    combined: list.length > 1,
+    count: list.length,
+    codes: list.map((u) => u.code),
+    clinics: list.map((u) => u.clinic),
+    code: list.map((u) => u.code).join(' + '),
+    clinic: list[0].clinic,
+    floor: list[0].floor,
+    type: new Set(list.map((u) => u.type)).size === 1 ? list[0].type : 'Clinics',
+    area,
+    price,
+    meterPrice,
+    /* True when the rate had to be derived, so the UI and the PDF can say so
+     * instead of printing "area x rate" and having it not quite foot. */
+    blendedRate: list.length > 1 && !sameRate,
+    state: unavailable ? unavailable.state : 'available',
+    status: unavailable ? unavailable.status : list[0].status,
+    heldReason: unavailable ? unavailable.heldReason : undefined,
+    /* Which clinic stopped this being offerable, so the refusal can name it
+     * rather than reporting every code in the selection. */
+    blocker: unavailable || null,
+  };
+}
+
+/** "13 & 14", "13, 14 & 15" — how the clinics read in a sentence. */
+function listAnd(items) {
+  const s = items.map(String);
+  return s.length < 2 ? (s[0] || '') : `${s.slice(0, -1).join(', ')} & ${s[s.length - 1]}`;
+}
+
 /** Add whole months, clamping to the last day when the target month is shorter
  *  (31 Jan + 1 month -> 28/29 Feb, not 2/3 March). */
 function addMonths(date, months) {
@@ -211,5 +286,5 @@ function scheduleTotal(rows) {
 }
 
 if (typeof module !== 'undefined') {
-  module.exports = { buildSchedule, monthLabel, scheduleTotal, scheduleByYear, fmt, fmtMoney, fmtPct, pctLabel, addMonths, fmtDate };
+  module.exports = { buildSchedule, monthLabel, scheduleTotal, scheduleByYear, fmt, fmtMoney, fmtPct, pctLabel, addMonths, fmtDate, combineUnits, listAnd };
 }

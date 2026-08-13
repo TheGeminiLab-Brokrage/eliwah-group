@@ -72,12 +72,14 @@ const load = (...files) => files.map((f) => fs.readFileSync(path.join(root, f), 
 const scope = new Function(`${load('js/config.js', 'js/plan.js', 'js/data.js', 'js/sheet.js', 'js/engine.js', 'js/pdf.js')}
   return { cfg: () => CONFIG, setProject, PLANS, SNAPSHOTS, parseCSV, normalizeRows, buildOfferPDF, offerFilename };`)();
 
-/* Usage: node scripts/test-pdf.js [projectId] [unitCode] [planId]
+/* Usage: node scripts/test-pdf.js [projectId] [unitCode(s)] [planId]
  *   node scripts/test-pdf.js emc C319 dp25
- *   node scripts/test-pdf.js mc9 MC924 dp20 */
+ *   node scripts/test-pdf.js mc9 MC924 dp20
+ *   node scripts/test-pdf.js emc C313+C314 dp10   <- combined offer */
 (async () => {
   const wantProject = process.argv[2] || 'emc';
-  const wantCode = (process.argv[3] || 'C319').toUpperCase();
+  const wantCodes = (process.argv[3] || 'C319').toUpperCase()
+    .split('+').map((c) => c.trim()).filter(Boolean);
 
   scope.setProject(wantProject);
   const CONFIG = scope.cfg();
@@ -92,17 +94,21 @@ const scope = new Function(`${load('js/config.js', 'js/plan.js', 'js/data.js', '
   const areas = scope.PLANS[CONFIG.planKey].areas;
 
   const { units } = scope.normalizeRows(scope.parseCSV(snap.csv), areas);
-  const unit = units.find((u) => u.code === wantCode);
-  if (!unit) throw new Error(`no unit ${wantCode} in the ${CONFIG.id} snapshot`);
+  const picked = wantCodes.map((code) => {
+    const u = units.find((x) => x.code === code);
+    if (!u) throw new Error(`no unit ${code} in the ${CONFIG.id} snapshot`);
+    return u;
+  });
   const plan = CONFIG.plans.find((p) => p.id === wantPlan);
   if (!plan) throw new Error(`no plan "${wantPlan}" for ${CONFIG.name}`);
-  const floor = CONFIG.floors.find((f) => f.key === unit.floorKey)
+  const floor = CONFIG.floors.find((f) => f.key === picked[0].floorKey)
     || CONFIG.floors[CONFIG.floors.length - 1];
 
   // buildOfferPDF hands back the document and the name it should be saved
   // under; in the browser deliverOffer decides between the share sheet and a
-  // download, but here we just write it to disk.
-  const { doc, filename } = await scope.buildOfferPDF(unit, plan, floor);
+  // download, but here we just write it to disk. It takes an array directly,
+  // which is how a combined offer is rendered.
+  const { doc, filename } = await scope.buildOfferPDF(picked, plan, floor);
   const out = path.join(root, 'raw', filename);
   fs.writeFileSync(out, Buffer.from(doc.output('arraybuffer')));
   console.log(`wrote ${path.relative(root, out)}  (${(fs.statSync(out).size / 1024).toFixed(0)} KB)`);

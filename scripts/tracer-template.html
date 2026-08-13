@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Clinic tracer — Eliwah Group</title>
+<style>
+  :root {
+    --bg: #14181d; --panel: #1c222a; --line: #2b3441; --ink: #e8edf3;
+    --dim: #93a1b3; --accent: #2fb37a; --warn: #e0a33a; --bad: #e05a4a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink); display: flex; flex-direction: column;
+    font: 13px/1.45 ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+
+  header {
+    display: flex; align-items: center; gap: 14px; padding: 8px 14px;
+    background: var(--panel); border-bottom: 1px solid var(--line); flex: none;
+  }
+  header h1 { font-size: 13px; font-weight: 600; margin: 0 8px 0 0; letter-spacing: .02em; }
+  .grow { flex: 1; }
+
+  button, select {
+    background: #273040; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer;
+  }
+  button:hover { background: #313c4e; }
+  button.on { background: var(--accent); border-color: var(--accent); color: #06120c; font-weight: 600; }
+  button.ghost { background: transparent; }
+  label.chk { display: flex; align-items: center; gap: 5px; color: var(--dim); cursor: pointer; user-select: none; }
+
+  main { flex: 1; display: flex; min-height: 0; }
+
+  /* ---- room list ---- */
+  #rooms {
+    width: 208px; flex: none; overflow-y: auto; background: var(--panel);
+    border-right: 1px solid var(--line);
+  }
+  .room {
+    display: flex; align-items: center; gap: 7px; padding: 5px 10px;
+    border-bottom: 1px solid #232b35; cursor: pointer;
+  }
+  .room:hover { background: #232c38; }
+  .room.on { background: #2c3a4c; box-shadow: inset 3px 0 0 var(--accent); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #46525f; flex: none; }
+  .dot.done { background: var(--accent); }
+  .dot.warn { background: var(--warn); }
+  .dot.bad  { background: var(--bad); }
+  .room .n { width: 26px; font-weight: 600; }
+  .room .m { color: var(--dim); font-size: 11px; }
+  .room .v { margin-left: auto; color: var(--dim); font-size: 11px; }
+
+  /* ---- canvas ---- */
+  #stage { flex: 1; overflow: auto; position: relative; background: #0d1116; }
+  #svg { display: block; cursor: crosshair; }
+  #svg image { image-rendering: auto; }
+
+  /* ---- side panel ---- */
+  #side {
+    width: 330px; flex: none; background: var(--panel); border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  #loupeBox { padding: 10px; border-bottom: 1px solid var(--line); }
+  #loupe {
+    width: 100%; aspect-ratio: 1; display: block; border-radius: 8px;
+    border: 1px solid var(--line); background: #000;
+  }
+  #hint { padding: 8px 10px; color: var(--dim); font-size: 11px; border-bottom: 1px solid var(--line); }
+  #hint b { color: var(--ink); font-weight: 600; }
+  kbd {
+    background: #2a3442; border: 1px solid #3a4757; border-bottom-width: 2px;
+    border-radius: 4px; padding: 0 4px; font: 11px ui-monospace, monospace;
+  }
+  #issues { padding: 8px 10px; font-size: 11px; border-bottom: 1px solid var(--line); max-height: 132px; overflow-y: auto; }
+  #issues div { margin-bottom: 3px; }
+  #issues .warn { color: var(--warn); }
+  #issues .bad { color: var(--bad); }
+  #issues .ok { color: var(--accent); }
+  #outWrap { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 10px; gap: 8px; }
+  #out {
+    flex: 1; width: 100%; resize: none; background: #10151b; color: #cfe3d6;
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px;
+    font: 11px/1.4 ui-monospace, "Cascadia Code", monospace; white-space: pre;
+  }
+  .row { display: flex; gap: 6px; }
+  .row button { flex: 1; }
+  #saved { color: var(--dim); font-size: 11px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Clinic tracer</h1>
+  <select id="planSel"></select>
+  <span id="progress" style="color:var(--dim)"></span>
+  <span class="grow"></span>
+  <label class="chk"><input type="checkbox" id="snap" checked> snap to nearby corners</label>
+  <label class="chk"><input type="checkbox" id="showAll" checked> show all rooms</label>
+  <button id="zoomOut">&minus;</button><span id="zoomLbl" style="color:var(--dim);width:44px;text-align:center"></span><button id="zoomIn">+</button>
+  <button class="ghost" id="resetRoom">Clear room</button>
+  <button class="ghost" id="resetAll">Reset all</button>
+</header>
+
+<main>
+  <div id="rooms"></div>
+
+  <div id="stage">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg">
+      <image id="plan" x="0" y="0"/>
+      <g id="shapes"></g>
+    </svg>
+  </div>
+
+  <div id="side">
+    <div id="loupeBox"><canvas id="loupe" width="300" height="300"></canvas></div>
+    <div id="hint">
+      <b>Click</b> to drop a corner · <b>drag</b> a corner to move it ·
+      <kbd>&larr;&uarr;&darr;&rarr;</kbd> nudge (hold <kbd>Shift</kbd> = 10px) ·
+      <kbd>Del</kbd> remove corner · <kbd>Enter</kbd> next room ·
+      <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Esc</kbd> deselect.
+      Click inside a finished room to jump to it.
+    </div>
+    <div id="issues"></div>
+    <div id="outWrap">
+      <textarea id="out" readonly spellcheck="false"></textarea>
+      <div class="row">
+        <button id="copy">Copy</button>
+        <button id="download">Save .js file</button>
+      </div>
+      <div id="saved"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+/* ------------------------------------------------------------------ *
+ * Clinic tracer.
+ *
+ * Draws a floor plan at its REFERENCE size (the coordinate space js/plan.js
+ * already uses) and lets a human click the room corners. Output is written in
+ * that same space, so it pastes into plan.js with no conversion step — which
+ * is where errors would otherwise creep back in.
+ *
+ * The SVG viewBox is deliberately "0 0 refW refH" and NOT a 0..1 box: in a
+ * normalised viewBox one user unit is the whole image, so a handle authored as
+ * r="5" paints a disc five times the width of the drawing and hides everything
+ * under it. Working in reference pixels keeps handle radii and stroke widths
+ * at their natural values; they are divided by the zoom so they stay a
+ * constant size on screen.
+ * ------------------------------------------------------------------ */
+const D = window.TRACER_DATA;
+
+const svg    = document.getElementById('svg');
+const planEl = document.getElementById('plan');
+const shapes = document.getElementById('shapes');
+const loupe  = document.getElementById('loupe');
+const lctx   = loupe.getContext('2d');
+
+let key, P, polys, current, selVert, drag = null, zoom = 1, undoStack = [];
+let hover = null;              // [x, y] in reference space, for the loupe
+const img = new Image();       // source bitmap, for the loupe only
+
+const HANDLE_R = 5;            // reference px at zoom 1
+const SNAP_PX  = 7;
+const LOUPE_MAG = 7;           // magnification relative to reference space
+
+/* ---- persistence ------------------------------------------------- */
+const storeKey = () => 'tracer:' + D.project + ':' + key;
+const save = () => {
+  localStorage.setItem(storeKey(), JSON.stringify(polys));
+  document.getElementById('saved').textContent =
+    'Saved in this browser · ' + new Date().toLocaleTimeString();
+};
+const load = () => {
+  const raw = localStorage.getItem(storeKey());
+  if (raw) { try { return JSON.parse(raw); } catch (e) { /* fall through to seed */ } }
+  return null;
+};
+
+/* ---- geometry ---------------------------------------------------- */
+function polyArea(pts) {                       // absolute area, shoelace
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % pts.length];
+    a += x0 * y1 - x1 * y0;
+  }
+  return Math.abs(a / 2);
+}
+function pointIn(pts, x, y) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i], [xj, yj] = pts[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+const centroid = (pts) => {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % pts.length];
+    const cr = x0 * y1 - x1 * y0;
+    a += cr; cx += (x0 + x1) * cr; cy += (y0 + y1) * cr;
+  }
+  a *= 0.5;
+  if (!a) return [pts.reduce((s, p) => s + p[0], 0) / pts.length,
+                  pts.reduce((s, p) => s + p[1], 0) / pts.length];
+  return [cx / (6 * a), cy / (6 * a)];
+};
+
+/* Every room's traced area should sit at the same px-per-m² as its printed m².
+ * Comparing each room against the median ratio catches the failure that matters:
+ * a polygon accidentally traced over the wrong room. */
+function areaCheck() {
+  const rs = [];
+  for (const n of P.numbers) {
+    const pts = polys[n], m2 = P.areas[n];
+    if (!pts || pts.length < 3 || !m2) continue;
+    rs.push({ n, r: polyArea(pts) / m2 });
+  }
+  if (rs.length < 4) return {};
+  const sorted = rs.map((o) => o.r).sort((a, b) => a - b);
+  const med = sorted[Math.floor(sorted.length / 2)];
+  const out = {};
+  for (const { n, r } of rs) {
+    const off = r / med;
+    if (off > 1.3 || off < 0.77) out[n] = Math.round((off - 1) * 100);
+  }
+  return out;
+}
+
+/* ---- drawing ----------------------------------------------------- */
+const ns = 'http://www.w3.org/2000/svg';
+const mk = (tag, attrs) => {
+  const e = document.createElementNS(ns, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+};
+
+function render() {
+  const showAll = document.getElementById('showAll').checked;
+  const bad = areaCheck();
+  shapes.textContent = '';
+  const sw = 1.6 / zoom;
+
+  for (const n of P.numbers) {
+    const pts = polys[n];
+    if (!pts || pts.length < 2) continue;
+    const isCur = n === current;
+    if (!isCur && !showAll) continue;
+    const d = pts.map((p) => p.join(',')).join(' ');
+    shapes.appendChild(mk('polygon', {
+      points: d,
+      fill: isCur ? 'rgba(47,179,122,.30)' : bad[n] ? 'rgba(224,90,74,.20)' : 'rgba(90,150,220,.13)',
+      stroke: isCur ? '#2fb37a' : bad[n] ? '#e05a4a' : '#5a96dc',
+      'stroke-width': isCur ? sw * 1.6 : sw,
+      'stroke-linejoin': 'round',
+    }));
+    if (pts.length >= 3) {
+      const [cx, cy] = centroid(pts);
+      const t = mk('text', {
+        x: cx, y: cy, fill: isCur ? '#fff' : '#cfe0f5', 'font-size': 15 / zoom,
+        'font-weight': 700, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+        'paint-order': 'stroke', stroke: 'rgba(0,0,0,.65)', 'stroke-width': 3 / zoom,
+        style: 'pointer-events:none;user-select:none',
+      });
+      t.textContent = n;
+      shapes.appendChild(t);
+    }
+  }
+
+  // Handles for the current room only — keeps the drawing readable.
+  const cur = polys[current] || [];
+  cur.forEach(([x, y], i) => {
+    shapes.appendChild(mk('circle', {
+      cx: x, cy: y, r: (i === selVert ? HANDLE_R * 1.5 : HANDLE_R) / zoom,
+      fill: i === selVert ? '#ffd35a' : '#fff', stroke: '#14181d', 'stroke-width': 1.5 / zoom,
+      'data-i': i, style: 'cursor:grab',
+    }));
+  });
+
+  // Reference pin, where plan.js already has a verified one.
+  const pin = P.pins && P.pins[current];
+  if (pin) {
+    shapes.appendChild(mk('circle', {
+      cx: pin[0], cy: pin[1], r: 3.5 / zoom, fill: 'none',
+      stroke: '#ffd35a', 'stroke-width': 2 / zoom, style: 'pointer-events:none',
+    }));
+  }
+  paintRooms(bad);
+  writeOut(bad);
+}
+
+function paintRooms(bad) {
+  const box = document.getElementById('rooms');
+  box.textContent = '';
+  let done = 0;
+  for (const n of P.numbers) {
+    const pts = polys[n] || [];
+    const ok = pts.length >= 3;
+    if (ok) done++;
+    const row = document.createElement('div');
+    row.className = 'room' + (n === current ? ' on' : '');
+    row.innerHTML =
+      '<span class="dot ' + (!ok ? '' : bad[n] ? 'bad' : 'done') + '"></span>' +
+      '<span class="n">' + n + '</span>' +
+      '<span class="m">' + (P.areas[n] ? P.areas[n] + ' m²' : '—') + '</span>' +
+      '<span class="v">' + (pts.length || '') + '</span>';
+    row.onclick = () => { current = n; selVert = null; render(); };
+    box.appendChild(row);
+  }
+  document.getElementById('progress').textContent =
+    done + ' / ' + P.numbers.length + ' rooms traced';
+}
+
+/* ---- output ------------------------------------------------------ */
+function writeOut(bad) {
+  const lines = [];
+  lines.push('/* ' + P.label + ' — room outlines traced by hand against the ' +
+             P.refW + 'x' + P.refH + ' reference render. */');
+  lines.push('const ' + P.varName + ' = {');
+  for (const n of P.numbers) {
+    const pts = polys[n];
+    if (!pts || pts.length < 3) { lines.push('  // ' + n + ': NOT TRACED'); continue; }
+    const body = pts.map(([x, y]) => '[' + Math.round(x) + ', ' + Math.round(y) + ']').join(', ');
+    lines.push('  ' + n + ': [' + body + '],' + (bad[n] ? '  // CHECK: area ' + (bad[n] > 0 ? '+' : '') + bad[n] + '% vs the others' : ''));
+  }
+  lines.push('};');
+  document.getElementById('out').value = lines.join('\n');
+
+  const box = document.getElementById('issues');
+  box.textContent = '';
+  const missing = P.numbers.filter((n) => !polys[n] || polys[n].length < 3);
+  // Only worth flagging where the pin was placed independently. EMC's pins are
+  // the centroids OF these polygons, so containment there proves nothing.
+  const offPin = !P.pinsVerified ? [] : P.numbers.filter((n) => {
+    const pts = polys[n], pin = P.pins && P.pins[n];
+    return pin && pts && pts.length >= 3 && !pointIn(pts, pin[0], pin[1]);
+  });
+  const add = (cls, txt) => {
+    const d = document.createElement('div');
+    d.className = cls; d.textContent = txt; box.appendChild(d);
+  };
+  if (missing.length) add('warn', 'Not traced yet: ' + missing.join(', '));
+  for (const n of Object.keys(bad)) {
+    add('bad', 'Room ' + n + ': traced area is ' + (bad[n] > 0 ? '+' : '') + bad[n] +
+        '% off what its ' + P.areas[n] + ' m² implies — check it is the right room.');
+  }
+  if (offPin.length) add('bad', 'Outline does not contain the known pin: ' + offPin.join(', '));
+  if (!missing.length && !Object.keys(bad).length && !offPin.length) {
+    add('ok', 'All ' + P.numbers.length + ' rooms traced and consistent.');
+  }
+}
+
+/* ---- interaction ------------------------------------------------- */
+function toRef(evt) {
+  const r = svg.getBoundingClientRect();
+  return [(evt.clientX - r.left) / r.width * P.refW,
+          (evt.clientY - r.top) / r.height * P.refH];
+}
+
+function snapped(x, y) {
+  if (!document.getElementById('snap').checked) return [x, y];
+  let best = null, bd = SNAP_PX;
+  for (const n of P.numbers) {
+    const pts = polys[n];
+    if (!pts) continue;
+    for (let i = 0; i < pts.length; i++) {
+      if (n === current && i === selVert) continue;
+      const d = Math.hypot(pts[i][0] - x, pts[i][1] - y);
+      if (d < bd) { bd = d; best = pts[i]; }
+    }
+  }
+  return best ? [best[0], best[1]] : [x, y];
+}
+
+const pushUndo = () => {
+  undoStack.push(JSON.stringify(polys));
+  if (undoStack.length > 80) undoStack.shift();
+};
+
+svg.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  const i = e.target.dataset ? e.target.dataset.i : undefined;
+  if (i !== undefined) {                       // grab an existing corner
+    selVert = +i; drag = +i; pushUndo(); render(); e.preventDefault(); return;
+  }
+  const [rx, ry] = toRef(e);
+  // Clicking inside another finished room jumps to it rather than adding a
+  // stray corner — much faster than hunting for it in the list.
+  for (const n of P.numbers) {
+    const pts = polys[n];
+    if (n !== current && pts && pts.length >= 3 && pointIn(pts, rx, ry)) {
+      current = n; selVert = null; render(); return;
+    }
+  }
+  pushUndo();
+  if (!polys[current]) polys[current] = [];
+  polys[current].push(snapped(rx, ry));
+  selVert = polys[current].length - 1;
+  save(); render();
+});
+
+svg.addEventListener('mousemove', (e) => {
+  const [rx, ry] = toRef(e);
+  hover = [rx, ry];
+  if (drag !== null) {
+    polys[current][drag] = snapped(rx, ry);
+    render();
+  }
+  drawLoupe();
+});
+svg.addEventListener('mouseleave', () => { hover = null; drawLoupe(); });
+window.addEventListener('mouseup', () => { if (drag !== null) { drag = null; save(); } });
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  const pts = polys[current] || [];
+
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    if (undoStack.length) { polys = JSON.parse(undoStack.pop()); save(); render(); }
+    e.preventDefault(); return;
+  }
+  if (e.key === 'Escape') { selVert = null; render(); return; }
+  if (e.key === 'Enter') {
+    const i = P.numbers.indexOf(current);
+    current = P.numbers[(i + 1) % P.numbers.length];
+    selVert = null; render(); return;
+  }
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (!pts.length) return;
+    pushUndo();
+    pts.splice(selVert === null ? pts.length - 1 : selVert, 1);
+    selVert = null; save(); render(); e.preventDefault(); return;
+  }
+  const step = e.shiftKey ? 10 : 1;
+  const nudge = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+  if (nudge && selVert !== null && pts[selVert]) {
+    pushUndo();
+    pts[selVert][0] += nudge[0];
+    pts[selVert][1] += nudge[1];
+    save(); render(); e.preventDefault();
+  }
+});
+
+/* ---- loupe ------------------------------------------------------- */
+/* The backing store has to match the displayed size (times the device pixel
+ * ratio) or the browser upscales a small canvas and softens exactly the detail
+ * the loupe exists to show. */
+function sizeLoupe() {
+  const r = loupe.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const S = Math.round(r.width * dpr);
+  if (S && loupe.width !== S) { loupe.width = S; loupe.height = S; }
+}
+window.addEventListener('resize', () => { sizeLoupe(); drawLoupe(); });
+
+function drawLoupe() {
+  sizeLoupe();
+  const S = loupe.width;
+  lctx.clearRect(0, 0, S, S);
+  if (!hover || !img.complete) return;
+
+  const span = S / LOUPE_MAG;                  // reference px visible across
+  const k = img.naturalWidth / P.refW;         // source px per reference px
+  lctx.imageSmoothingEnabled = false;
+  lctx.drawImage(img,
+    (hover[0] - span / 2) * k, (hover[1] - span / 2) * k, span * k, span * k,
+    0, 0, S, S);
+
+  // The in-progress outline, so you can see whether the next corner lines up.
+  const toL = ([x, y]) => [(x - hover[0]) / span * S + S / 2, (y - hover[1]) / span * S + S / 2];
+  const u = S / 300;                           // keep overlay weights constant
+  const pts = polys[current] || [];
+  if (pts.length) {
+    lctx.strokeStyle = '#2fb37a'; lctx.lineWidth = 2 * u;
+    lctx.beginPath();
+    pts.forEach((p, i) => { const [x, y] = toL(p); i ? lctx.lineTo(x, y) : lctx.moveTo(x, y); });
+    if (pts.length >= 3) lctx.closePath();
+    lctx.stroke();
+    lctx.fillStyle = '#fff';
+    pts.forEach((p) => {
+      const [x, y] = toL(p);
+      lctx.beginPath(); lctx.arc(x, y, 3.5 * u, 0, 7); lctx.fill();
+    });
+  }
+  // Crosshair, and a ring when this click would snap to an existing corner.
+  const [sx, sy] = snapped(hover[0], hover[1]);
+  const didSnap = sx !== hover[0] || sy !== hover[1];
+  lctx.strokeStyle = didSnap ? '#ffd35a' : 'rgba(255,60,60,.9)';
+  lctx.lineWidth = 1 * u;
+  lctx.beginPath();
+  lctx.moveTo(S / 2, 0); lctx.lineTo(S / 2, S);
+  lctx.moveTo(0, S / 2); lctx.lineTo(S, S / 2);
+  lctx.stroke();
+  if (didSnap) {
+    const [x, y] = toL([sx, sy]);
+    lctx.beginPath(); lctx.arc(x, y, 9 * u, 0, 7); lctx.stroke();
+  }
+}
+
+/* ---- zoom -------------------------------------------------------- */
+function setZoom(z) {
+  zoom = Math.min(6, Math.max(0.25, z));
+  svg.setAttribute('width', P.refW * zoom);
+  svg.setAttribute('height', P.refH * zoom);
+  document.getElementById('zoomLbl').textContent = Math.round(zoom * 100) + '%';
+  render();
+}
+document.getElementById('zoomIn').onclick = () => setZoom(zoom * 1.25);
+document.getElementById('zoomOut').onclick = () => setZoom(zoom / 1.25);
+document.getElementById('stage').addEventListener('wheel', (e) => {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  setZoom(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
+}, { passive: false });
+
+/* ---- plan switching ---------------------------------------------- */
+function openPlan(k) {
+  key = k;
+  P = D.plans[k];
+  polys = load() || JSON.parse(JSON.stringify(P.seed));
+  current = P.numbers[0];
+  selVert = null; undoStack = [];
+  svg.setAttribute('viewBox', '0 0 ' + P.refW + ' ' + P.refH);
+  planEl.setAttribute('width', P.refW);
+  planEl.setAttribute('height', P.refH);
+  planEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', P.img);
+  planEl.setAttribute('href', P.img);
+  img.src = P.img;
+  img.onload = drawLoupe;
+  setZoom(Math.min(1, (window.innerWidth - 560) / P.refW));
+}
+
+const sel = document.getElementById('planSel');
+for (const k of Object.keys(D.plans)) {
+  const o = document.createElement('option');
+  o.value = k; o.textContent = D.plans[k].label;
+  sel.appendChild(o);
+}
+sel.onchange = () => openPlan(sel.value);
+
+document.getElementById('showAll').onchange = render;
+document.getElementById('resetRoom').onclick = () => {
+  pushUndo(); polys[current] = []; selVert = null; save(); render();
+};
+document.getElementById('resetAll').onclick = () => {
+  if (!confirm('Throw away every outline on this plan and go back to the starting shapes?')) return;
+  pushUndo(); polys = JSON.parse(JSON.stringify(P.seed)); selVert = null; save(); render();
+};
+document.getElementById('copy').onclick = async () => {
+  await navigator.clipboard.writeText(document.getElementById('out').value);
+  const b = document.getElementById('copy');
+  b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy'; }, 1200);
+};
+document.getElementById('download').onclick = () => {
+  const blob = new Blob([document.getElementById('out').value], { type: 'text/javascript' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'polygons-' + key + '.js';
+  a.click();
+};
+
+openPlan(Object.keys(D.plans)[0]);
+</script>
+</body>
+</html>

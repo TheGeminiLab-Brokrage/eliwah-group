@@ -10,7 +10,7 @@ const load = (...files) => {
   const src = files.map((f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8')).join('\n;\n');
   return new Function(`${src}
     return { CONFIG, cfg: () => CONFIG, setProject, addMonths, SNAPSHOTS, parseCSV, normalizeRows, parseUnitCode, parseNumber,
-             buildSchedule, scheduleTotal, CLINIC_AREAS, CLINIC_HOTSPOTS, POLYGONS, CLINIC_PINS, PROJECTS, PLANS, floorOrdinal };`)();
+             buildSchedule, scheduleTotal, combineUnits, listAnd, CLINIC_AREAS, CLINIC_HOTSPOTS, POLYGONS, CLINIC_PINS, PROJECTS, PLANS, floorOrdinal };`)();
 };
 
 const G = load('js/config.js', 'js/plan.js', 'js/data.js', 'js/sheet.js', 'js/engine.js');
@@ -52,6 +52,88 @@ for (let i = 0; i < pins.length; i++) {
     const d = Math.hypot(pins[i].x - pins[j].x, pins[i].y - pins[j].y);
     check(`pins ${pins[i].n} and ${pins[j].n} do not overlap`, d > 36, `${d.toFixed(0)}px apart`);
   }
+}
+
+/* ---- traced room outlines ------------------------------------------------
+ *
+ * Both plans are now DRAWN as their outlines, in the app and on page 4 of the
+ * offer, so a wrong outline is a wrong document rather than a cosmetic slip.
+ * Checked as a set rather than by spot check: the failure that matters is a
+ * room traced over its neighbour, which no single assertion would catch.
+ */
+console.log('\nTraced outlines');
+const polyArea = (pts) => {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x0, y0] = pts[i], [x1, y1] = pts[(i + 1) % pts.length];
+    a += x0 * y1 - x1 * y0;
+  }
+  return Math.abs(a / 2);
+};
+const bboxOf = (p) => [Math.min(...p.map((v) => v[0])), Math.min(...p.map((v) => v[1])),
+  Math.max(...p.map((v) => v[0])), Math.max(...p.map((v) => v[1]))];
+/* Overlap measured by sampling A's interior, not by testing A's corners against
+ * B: adjacent rooms deliberately SHARE corners (the tracer snaps to them), and
+ * a corner sitting exactly on a boundary tests as inside about half the time. */
+function overlapFraction(A, B) {
+  const [x0, y0, x1, y1] = bboxOf(A);
+  let inA = 0, inBoth = 0;
+  for (let y = y0; y <= y1; y += 1) {
+    for (let x = x0; x <= x1; x += 1) {
+      if (!pointInPolygon([x, y], A)) continue;
+      inA++;
+      if (pointInPolygon([x, y], B)) inBoth++;
+    }
+  }
+  return inA ? inBoth / inA : 0;
+}
+
+for (const [key, plan] of Object.entries(G.PLANS)) {
+  if (!plan.outlines) {
+    check(`${key}: not drawn as outlines, so pins must carry the plan`, !!plan.pins);
+    continue;
+  }
+  const nums = Object.keys(plan.areas).map(Number).sort((a, b) => a - b);
+  check(`${key}: every room has an outline`,
+    nums.every((n) => plan.polygons[n]),
+    'missing: ' + nums.filter((n) => !plan.polygons[n]).join(','));
+  check(`${key}: no outline has fewer than 3 corners`,
+    nums.every((n) => (plan.polygons[n] || []).length >= 3));
+  check(`${key}: every corner is inside the drawing`,
+    nums.every((n) => (plan.polygons[n] || []).every(([x, y]) =>
+      x >= 0 && y >= 0 && x <= plan.refW && y <= plan.refH)));
+  check(`${key}: every outline contains its own pin`,
+    nums.every((n) => pointInPolygon([plan.pins[n].x, plan.pins[n].y], plan.polygons[n])),
+    nums.filter((n) => !pointInPolygon([plan.pins[n].x, plan.pins[n].y], plan.polygons[n])).join(','));
+
+  // The one that matters: no room may sit on top of another.
+  const clashes = [];
+  for (let i = 0; i < nums.length; i++) {
+    for (let j = i + 1; j < nums.length; j++) {
+      const A = plan.polygons[nums[i]], B = plan.polygons[nums[j]];
+      const [ax0, ay0, ax1, ay1] = bboxOf(A), [bx0, by0, bx1, by1] = bboxOf(B);
+      if (ax1 < bx0 || bx1 < ax0 || ay1 < by0 || by1 < ay0) continue;
+      const f = Math.max(overlapFraction(A, B), overlapFraction(B, A));
+      if (f > 0.05) clashes.push(`${nums[i]}/${nums[j]} ${(f * 100).toFixed(0)}%`);
+    }
+  }
+  check(`${key}: no two rooms overlap`, clashes.length === 0, clashes.join(', '));
+
+  /* Every room's traced area should imply the same px-per-m² as the m² printed
+   * in it. A room that doesn't is either traced wrong or labelled wrong on the
+   * drawing — both worth knowing, neither silently acceptable. */
+  const ratios = nums.map((n) => polyArea(plan.polygons[n]) / plan.areas[n]).sort((a, b) => a - b);
+  const median = ratios[Math.floor(ratios.length / 2)];
+  const odd = nums.filter((n) => {
+    const off = (polyArea(plan.polygons[n]) / plan.areas[n]) / median;
+    return off > 1.25 || off < 0.8;
+  });
+  const known = (plan.areaMismatches || []);
+  check(`${key}: traced areas agree with the drawing's labels`,
+    odd.every((n) => known.includes(n)),
+    'unexpected: ' + odd.filter((n) => !known.includes(n)).join(','));
+  console.log(`  ${key}: ${nums.length} outlines, ${median.toFixed(0)} px² per m²`
+    + (odd.length ? `, ${odd.length} known label mismatch(es): ${odd.join(', ')}` : ''));
 }
 
 /* every registered building */
@@ -455,6 +537,119 @@ for (const unit of units) {
       rows.some((r) => r.month === 18 && r.label.startsWith('Maintenance')));
   }
 }
+
+/* ---- combined offers ----------------------------------------------------
+ *
+ * Brokers sell two adjacent clinics as one suite and want a single price and a
+ * single schedule. The risk is a combined offer that quietly does not foot, so
+ * the properties checked here are the ones a customer would notice: the total
+ * is the sum of the parts, the schedule still adds up exactly, and combining
+ * does not change what is actually payable.
+ */
+console.log('\nCombined offers');
+const avail = units.filter((u) => u.state === 'available').sort((a, b) => a.clinic - b.clinic);
+const [c1, c2, c3] = avail;
+
+// A lone clinic goes through the same code path and must come out untouched.
+const single = G.combineUnits([c1]);
+check('single: not flagged combined', single.combined === false);
+check('single: count is 1', single.count === 1);
+check('single: code unchanged', single.code === c1.code);
+check('single: price unchanged', single.price === c1.price);
+check('single: area unchanged', single.area === c1.area);
+check('single: rate is the sheet rate, not derived',
+  single.meterPrice === c1.meterPrice && single.blendedRate === false);
+
+const pair = G.combineUnits([c1, c2]);
+check('pair: flagged combined', pair.combined === true && pair.count === 2);
+check('pair: area is the sum', pair.area === c1.area + c2.area);
+check('pair: price is the sum', pair.price === c1.price + c2.price);
+check('pair: code lists both', pair.code === `${c1.code} + ${c2.code}`);
+check('pair: clinics listed in order',
+  pair.clinics.join(',') === [c1.clinic, c2.clinic].sort((a, b) => a - b).join(','));
+check('pair: state is available', pair.state === 'available');
+check('pair: order of selection does not matter',
+  G.combineUnits([c2, c1]).code === pair.code
+  && G.combineUnits([c2, c1]).price === pair.price);
+
+/* The rate is the field most easily got wrong: quoting one clinic's rate
+ * against the combined area would misstate the offer. */
+const sameRate = avail.filter((u) => u.meterPrice === c1.meterPrice);
+if (sameRate.length >= 2) {
+  const sr = G.combineUnits(sameRate.slice(0, 2));
+  check('same rate: carried across exactly, not blended',
+    sr.meterPrice === c1.meterPrice && sr.blendedRate === false);
+}
+const diff = avail.find((u) => u.meterPrice !== c1.meterPrice);
+if (diff) {
+  const dr = G.combineUnits([c1, diff]);
+  check('mixed rates: flagged blended', dr.blendedRate === true);
+  check('mixed rates: rate derived from the totals',
+    dr.meterPrice === Math.round(dr.price / dr.area));
+  check('mixed rates: derived rate sits between the two',
+    dr.meterPrice >= Math.min(c1.meterPrice, diff.meterPrice)
+    && dr.meterPrice <= Math.max(c1.meterPrice, diff.meterPrice));
+}
+
+// Guards. Each of these would produce a wrong document rather than an error.
+const throws = (fn) => { try { fn(); return false; } catch { return true; } };
+check('refuses an empty selection', throws(() => G.combineUnits([])));
+check('refuses the same clinic twice', throws(() => G.combineUnits([c1, c1])));
+check('refuses clinics on different floors',
+  throws(() => G.combineUnits([c1, { ...c2, floor: c2.floor + 1 }])));
+const sold = { ...c2, state: 'sold', status: 'Sold' };
+const blocked = G.combineUnits([c1, sold]);
+check('a sold clinic makes the whole offer unavailable', blocked.state !== 'available');
+check('the refusal can name the clinic at fault', blocked.blocker.code === sold.code);
+
+/* Every plan against a combined pair: the schedule must still sum exactly, and
+ * the combined figures must equal what the two clinics come to separately. */
+for (const p of G.CONFIG.plans) {
+  const { rows, summary } = G.buildSchedule(pair, p);
+  check(`combined / ${p.id}: rows sum to total payable`,
+    G.scheduleTotal(rows) === summary.totalPayable,
+    `${G.scheduleTotal(rows)} vs ${summary.totalPayable}`);
+  check(`combined / ${p.id}: no negative or zero payments`, rows.every((r) => r.amount > 0));
+  check(`combined / ${p.id}: priced off the combined total`,
+    summary.originalPrice === c1.price + c2.price);
+  check(`combined / ${p.id}: maintenance on the combined ORIGINAL price`,
+    summary.maintenance === Math.round(pair.price * G.CONFIG.maintenanceRate));
+
+  if (!p.cash) {
+    const inst = rows.filter((r) => r.instalment);
+    check(`combined / ${p.id}: down + instalments = combined price`,
+      summary.downPayment + inst.reduce((s, r) => s + r.amount, 0) === pair.price);
+    check(`combined / ${p.id}: ${p.years * 4} quarterly instalments`,
+      inst.length === p.years * 4);
+  }
+
+  /* Combining is a packaging decision, not a discount: two clinics bought
+   * together must cost what they cost apart. Allowed to differ by a couple of
+   * pounds only because each schedule rounds to whole pounds independently. */
+  const apart = G.buildSchedule(c1, p).summary.totalPayable
+    + G.buildSchedule(c2, p).summary.totalPayable;
+  check(`combined / ${p.id}: total matches the two bought separately`,
+    Math.abs(summary.totalPayable - apart) <= 2,
+    `${summary.totalPayable} vs ${apart}`);
+}
+
+// Three clinics, since nothing caps the selection at two.
+if (c3) {
+  const trio = G.combineUnits([c1, c2, c3]);
+  check('three clinics: area is the sum', trio.area === c1.area + c2.area + c3.area);
+  check('three clinics: price is the sum', trio.price === c1.price + c2.price + c3.price);
+  const { rows, summary } = G.buildSchedule(trio, G.CONFIG.plans[0]);
+  check('three clinics: schedule still sums exactly',
+    G.scheduleTotal(rows) === summary.totalPayable);
+}
+
+check('listAnd: one', G.listAnd([13]) === '13');
+check('listAnd: two', G.listAnd([13, 14]) === '13 & 14');
+check('listAnd: three', G.listAnd([13, 14, 15]) === '13, 14 & 15');
+
+console.log(`  combined ${c1.code}+${c2.code}: ${pair.area} m², `
+  + `${pair.price.toLocaleString()} ${G.CONFIG.currency}`
+  + `${pair.blendedRate ? ' (blended rate)' : ''}`);
 
 /* worked example, printed so it can be eyeballed against a real offer */
 const sample = units.find((u) => u.code === 'C313');
