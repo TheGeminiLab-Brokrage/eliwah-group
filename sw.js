@@ -11,10 +11,21 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-/* v4 — jsPDF deferred so it stops delaying the inventory fetch on a cold visit.
+/* v5 — the shell is no longer downloaded twice on a first visit, and app code
+ *      is revalidated instead of frozen. Both found on Qomor (2026-08-14),
+ *      which was built from this app and inherited them.
+ * v4 — jsPDF deferred so it stops delaying the inventory fetch on a cold visit.
  * v3 — inventory prefetched at boot, and a timeout on the sheet fetch.
  * v2 — combined offers, traced room outlines, no phone on the offer (2026-08-13). */
-const CACHE = 'eliwah-offers-v4';
+const CACHE = 'eliwah-offers-v5';
+
+/* Code is revalidated; artwork is not.
+ *
+ * See the fetch handler. Cache-first on the app's own JavaScript is a trap: the
+ * cached copy is only ever replaced when THIS FILE changes, so a deploy that
+ * touches js/ and not sw.js leaves every returning phone running the old code
+ * forever, and lets the halves of the app drift out of step with each other. */
+const CODE = /\.(js|css|html|webmanifest)$/i;
 
 /* The shell: enough to boot and render, kept small so the first visit on mobile
  * data is quick. The heavy print assets are deliberately NOT here — they are
@@ -54,10 +65,22 @@ const SHELL = [
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    // Individually, not addAll: one 404 in the list would otherwise abort the
-    // whole install and leave the app with no offline support at all.
-    await Promise.all(SHELL.map((url) =>
-      cache.add(new Request(url, { cache: 'reload' })).catch(() => {})));
+    /* Individually, not addAll: one 404 in the list would otherwise abort the
+     * whole install and leave the app with no offline support at all.
+     *
+     * And NOT `new Request(url, { cache: 'reload' })`, which was here until
+     * 2026-08-14. It forces a fresh network request for every file — but the
+     * browser has just downloaded index.html, the CSS, all the scripts AND the
+     * 420 KB of jsPDF to render the page, so the install pulled the whole shell
+     * down a SECOND time, competing with the inventory fetch on exactly the
+     * first visit and exactly the worst connection. That is what the note above
+     * about jsPDF "fetched twice on a cold visit" was describing; the plain form
+     * fixes it without dropping jsPDF from the shell, so an agent who goes
+     * offline right after their first visit can still produce an offer.
+     *
+     * Serving a slightly stale shell costs nothing now that code is
+     * stale-while-revalidate below: it corrects itself on the next load. */
+    await Promise.all(SHELL.map((url) => cache.add(url).catch(() => {})));
     self.skipWaiting();
   })());
 });
@@ -98,11 +121,35 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  /* Everything else — code, styles, renders, floor plans — cache-first. These
-   * are versioned by deploy, and the renders are big enough that re-fetching
-   * them for every PDF would be wasteful on mobile data. A miss is fetched and
-   * kept, which is how the print assets end up available offline after the
-   * first offer has been generated. */
+  /* CODE — stale-while-revalidate. The cached copy is served immediately, so
+   * startup stays as fast as cache-first, but a fresh copy is fetched behind it
+   * and written over the old one, so the NEXT load is current. That is what
+   * makes a deploy reach a returning phone without this file having to change.
+   * Offline is unaffected: if the revalidation fails, the cached copy has
+   * already been served. */
+  if (CODE.test(url.pathname)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      const hit = await cache.match(req);
+      const fetching = fetch(req).then((fresh) => {
+        if (fresh.ok && fresh.type === 'basic') cache.put(req, fresh.clone());
+        return fresh;
+      });
+      if (hit) {
+        // Don't let the tab close out from under the revalidation.
+        event.waitUntil(fetching.catch(() => {}));
+        return hit;
+      }
+      try { return await fetching; } catch { return Response.error(); }
+    })());
+    return;
+  }
+
+  /* EVERYTHING ELSE — renders, floor plans, icons — cache-first. This artwork
+   * is effectively immutable and big enough that re-fetching it for every PDF
+   * would be wasteful on mobile data. A miss is fetched and kept, which is how
+   * the print assets end up available offline after the first offer has been
+   * generated. Replace a render and its filename changes, or bump CACHE. */
   event.respondWith((async () => {
     const hit = await caches.match(req);
     if (hit) return hit;
