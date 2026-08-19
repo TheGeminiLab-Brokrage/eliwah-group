@@ -822,6 +822,21 @@ async function issueOffer(share) {
       const { doc, filename } = await buildOfferPDF(offerUnit(), plan, floor, state.contractDate);
       doc.save(filename);
     }
+
+    /* Record the offer. AFTER the await, so only an offer that actually reached
+       the agent is counted — a failed export throws to the catch below and is
+       never logged, which keeps "offers sent" honest. Not awaited and unable to
+       throw, so a dead endpoint cannot cost a sale.
+
+       CONFIG.id, not a constant: one app serves EMC and 9MC, and CONFIG is
+       swapped by selectProject(). state.picked is passed whole because an
+       Eliwah offer can combine several clinics, and counting only the merged
+       unit would under-report every one of them. */
+    if (typeof logOffer === 'function') {
+      logOffer(offerRow(CONFIG.id, offerUnit(), state.picked, plan,
+                        buildSchedule(offerUnit(), plan, state.contractDate).summary,
+                        { delivery: share ? 'shared' : 'downloaded' }));
+    }
   } catch (err) {
     alert('Could not build the PDF: ' + err.message);
   } finally {

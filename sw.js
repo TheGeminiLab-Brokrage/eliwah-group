@@ -15,9 +15,10 @@
  *      is revalidated instead of frozen. Both found on Qomor (2026-08-14),
  *      which was built from this app and inherited them.
  * v4 — jsPDF deferred so it stops delaying the inventory fetch on a cold visit.
+ * v6 — offer analytics: each issued offer is recorded (2026-08-19).
  * v3 — inventory prefetched at boot, and a timeout on the sheet fetch.
  * v2 — combined offers, traced room outlines, no phone on the offer (2026-08-13). */
-const CACHE = 'eliwah-offers-v5';
+const CACHE = 'eliwah-offers-v6';
 
 /* Code is revalidated; artwork is not.
  *
@@ -50,6 +51,7 @@ const SHELL = [
   'js/data.js',
   'js/sheet.js',
   'js/engine.js',
+  'js/telemetry.js',
   'js/pdf.js',
   'js/app.js',
   'vendor/jspdf.umd.min.js',

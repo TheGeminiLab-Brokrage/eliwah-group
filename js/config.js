@@ -18,6 +18,27 @@ const GLOBAL = {
    * safe direction to fail: better to hide a free unit than to sell a sold one. */
   availableStatuses: ['available', 'free', 'open'],
   reservedStatuses: ['reserved', 'on hold', 'hold', 'blocked'],
+
+  /* ------------------------------------------------------------ analytics --
+   * Where an issued offer is recorded. SHIPPED DISABLED: with no `url` and
+   * `key`, js/telemetry.js does nothing at all, so this can go live before the
+   * backend exists and be switched on by editing two lines.
+   *
+   * It sits on GLOBAL, so EMC and 9MC share one endpoint. WHICH project an
+   * offer belongs to is deliberately NOT set here — it is read from the active
+   * CONFIG.id when the offer goes out, because one app serves both projects and
+   * a constant here would file every 9MC offer under EMC.
+   *
+   * `key` is the Supabase ANON key and it is PUBLIC — it sits in the page
+   * source of a static site, and there is no way around that. It is safe only
+   * because the table's row-level security grants anon INSERT and nothing else,
+   * so it cannot read back a single row. Never put the service_role key here;
+   * that one bypasses RLS and would expose every project's activity. */
+  telemetry: {
+    url: 'https://ctlavvvxchusvqxbcmac.supabase.co/rest/v1/offer_events',
+    key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bGF2dnZ4Y2h1c3ZxeGJjbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMDE1MTYsImV4cCI6MjEwMjY3NzUxNn0.UsyG7D8LRh0Abno0k7QfrZ96MqjJM6FvMj8jeB8Q_c4',
+    version: 'eliwah-offers-v6',  // set to the sw.js cache name on each deploy
+  },
 };
 
 /**
