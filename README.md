@@ -431,6 +431,76 @@ only appears where the browser can actually share a file — in practice Android
 Chrome and iOS Safari. Everywhere else, and if the agent dismisses the share
 sheet, it falls back to a plain download.
 
+**Send on WhatsApp only appears on a handheld, and this is a fix, not a
+limitation.** `navigator.canShare({files})` is a capability question, and desktop
+Chrome on Windows answers *yes* — then `navigator.share` opens an OS flyout and
+never settles the promise. Neither resolved nor rejected, so the `finally` that
+re-enables the button never ran and both buttons stayed dead until a reload,
+with no error anywhere. `canShareFiles()` now also asks whether this is a
+handheld. `maxTouchPoints` cannot answer that — a touchscreen laptop reports 10.
+
+## The WhatsApp post
+
+The PDF is a one-to-one document: addressed to a customer, carrying a payment
+schedule, landing in a chat as an attachment. That is the wrong shape for where
+most sales actually start. Agents work broker groups, and in a group a PDF reads
+as a formal offer nobody opens, while a formatted post with a plan image and a
+price reads as a listing and gets forwarded.
+
+So the teams stopped using the app for that step and started **retyping the post
+by hand for every clinic** — observed 2026-08-22, and the reason this exists.
+Retyping is slow, it drifts off-message, and it puts the price back in the hands
+of whoever is typing.
+
+`js/post.js` generates the post instead. The header is assembled from the same
+live inventory row the PDF uses; the project copy comes from `CONFIG.post`,
+transcribed from the team's own posts; the plan is rendered with the clinics
+pinned. Two lengths:
+
+| | text | images |
+|---|---|---|
+| **Short** | clinic, floor, price, terms | the plan, clinics pinned |
+| **Full** | the above + the project story | the plan + the location map |
+
+### The rules it exists to keep
+
+- **The image never shows availability.** The on-screen plan colours every room
+  green/amber/red; that is for the agent. This image is built from
+  `CONFIG.planPrint` — the clean drawing the PDF uses — with only the offered
+  rooms marked, because a post must never publish which clinics are already sold.
+- **No deep link.** `#emc/C313` is how one agent sends another to a unit, but
+  the app is a public static site: anyone holding that link has the whole
+  inventory, every price and the generator itself.
+- **The cash price, not the list price.** A post reading "السعر 7,540,000"
+  beside "cash, 25% discount" tells a broker the discount is on top of a price
+  that already has it. Both numbers appear, explicitly.
+- **A split down payment says so.** 9MC's 20% plan is 10% on contract and 10% a
+  year later. "20% down" against a plan the customer only half pays on the day
+  is a worse quote than none — and it undersells the better terms.
+
+### Two Arabic details worth knowing
+
+- **Dual, not plural.** Arabic counts two of a thing differently from three, so
+  `unitNounDual` is its own string in `CONFIG.post`. A combined offer is usually
+  two clinics, so it is the case that gets seen — `2 عيادات` is how a machine
+  writes it.
+- **Unicode isolates.** The bidirectional algorithm cannot know `10%` is one
+  atom and renders it `%10`. `iso()` wraps interpolated values, and skips any
+  containing Arabic — forcing one left-to-right is the reordering it exists to
+  prevent.
+
+### Where the pin goes
+
+Off the **top edge** of the room, not its centre. The drawing prints
+`CLINIC 13 / 27 m²` at the centre of each room, and a pin on the centroid sits
+on top of it — erasing the one label that tells a broker which unit the post is
+about. Rooms on the top row have no corridor above them and the pin would leave
+the image, so those hang inside from the bottom edge instead.
+
+For a combined offer, a room whose pin would land inside another room in the
+same offer gets none: the block is already shaded as one, and the room above
+carries the pin for the pair. Rooms far apart still get one each.
+
 ## Installing it on a phone
 
 `site.webmanifest` plus an `apple-touch-icon` make the app installable: **Add to

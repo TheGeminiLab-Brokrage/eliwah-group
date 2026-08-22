@@ -37,7 +37,7 @@ const GLOBAL = {
   telemetry: {
     url: 'https://ctlavvvxchusvqxbcmac.supabase.co/rest/v1/offer_events',
     key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bGF2dnZ4Y2h1c3ZxeGJjbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMDE1MTYsImV4cCI6MjEwMjY3NzUxNn0.UsyG7D8LRh0Abno0k7QfrZ96MqjJM6FvMj8jeB8Q_c4',
-    version: 'eliwah-offers-v6',  // set to the sw.js cache name on each deploy
+    version: 'eliwah-offers-v7',  // set to the sw.js cache name on each deploy
   },
 };
 
@@ -101,6 +101,44 @@ const PROJECTS = [
     },
 
     contact: { web: 'www.eliwahgroup.com', address: 'El Yasmeen, New Cairo' },
+
+    /* ---- the WhatsApp post (js/post.js) ----
+     * `body` is the project story that goes out under a unit in "long" mode. It
+     * is TRANSCRIBED FROM THE SALES TEAM'S OWN POST (2026-08-22), not written
+     * here — it goes out over Eliwah's name and the team is already sending
+     * this exact wording by hand. Edit it here and every agent's post changes;
+     * that is the point of the feature.
+     *
+     * NOTE — the team's post heads this project "EastHUB Medical Center" while
+     * this file has always called it "Eliwah Medical Center", and that name is
+     * on every PDF. One of the two is wrong. Unresolved; `title` below follows
+     * the app so both outputs at least agree. Change this one line once the
+     * client confirms which it is. */
+    post: {
+      title: '🏥 EMC | Eliwah Medical Center',
+      place: 'New Cairo',
+      unitNoun: 'عيادة طبية',
+      unitNounDual: 'عيادتين مدمجتين',
+      unitNounPlural: 'عيادات مدمجة',
+      body: `في EMC لا نبني مركزًا طبيًا فقط… بل نبني منظومة صحية متكاملة، لأننا نؤمن أن نجاح أي مشروع يبدأ باختيار شركاء النجاح الحقيقيين.
+
+ولهذا حرصنا على التعاون مع نخبة من أفضل المتخصصين في كل عنصر من عناصر المشروع.
+
+🏗 Engineering Consultant
+OY Studio
+شريكنا الهندسي المسؤول عن تصميم المشروع وفق أحدث المعايير العالمية، ليقدم بيئة طبية عصرية تجمع بين الجودة، والابتكار، والاستدامة.
+
+🏢 Commercial Management & Operation
+HPM × One Way
+منظومة احترافية لإدارة وتشغيل المشروع، بهدف تعظيم القيمة الاستثمارية، ورفع نسب الإشغال، وتقديم تجربة متميزة للملاك وللأطباء والزوار.
+
+💻 Technology Partner
+VOOM
+شريك التكنولوجيا المسؤول عن تطبيق أحدث حلول Smart Building و Digital Twin والتحول الرقمي.
+
+📊 Medical Financial & Feasibility Consultant
+تشاور للاستشارات المالية ودراسات الجدوى للمشروعات الطبية، لوضع الدراسات المالية والتشغيلية، وبناء نموذج اقتصادي يضمن استدامة المشروع وتعظيم العائد.`,
+    },
 
     /* Live inventory. Published via File > Share > Publish to web > CSV.
      * gviz is primary: it echoes the caller's Origin (so fetch works from any
@@ -195,6 +233,59 @@ const PROJECTS = [
       // (2026-08-13). pdf.js filters out absent fields, so the footer just
       // closes up. Do not put one back without asking.
       email: '9mc@eliwahgroup.com',
+    },
+
+    /* Transcribed from the 9MC sales post (2026-08-22) — its own wording, not
+     * EMC's, for the same reason `story` is: before that existed the 9MC offer
+     * printed EMC's description and a map of the wrong city.
+     *
+     * `finish` is a 9MC-only line. Its clinics are sold finished and furnished
+     * and the team leads with that, because it is the difference between this
+     * project and a shell unit down the road. EMC has no equivalent. */
+    post: {
+      title: '🏥 9MC | The Future of Healthcare',
+      place: 'MU23, New Capital',
+      unitNoun: 'عيادة طبية',
+      unitNounDual: 'عيادتين مدمجتين',
+      unitNounPlural: 'عيادات مدمجة',
+      finish: 'عيادة متشطبة ومفروشة بالفرش الطبي',
+      closing: 'The Future of Healthcare… Starts Here.',
+      body: `📍 على محور الأمل الرئيسي… وبين الحيين السكنيين الثاني والثالث… في قلب MU23… يولد مشروع سيعيد تعريف مفهوم الـ Medical Center الجديدة في العاصمة الإدارية.
+
+وسط أكبر كثافة سكانية في المنطقة… أكثر من 300,000 نسمة… بدأنا من أهم خطوة في أي مشروع ناجح…
+🤝 اختيار شركاء النجاح الحقيقيين.
+
+━━━━━━━━━━
+
+🏥 Medical Operator | Healthy Care
+واحدة من أقوى شركات تشغيل وإدارة المراكز الطبية في مصر، بخبرة واسعة وسجل ناجح في تشغيل العديد من المشروعات الطبية، لتقود منظومة التشغيل داخل 9MC وفق أعلى المعايير المهنية، وتضمن جاهزية التشغيل الفعلي مع افتتاح المشروع.
+
+━━━━━━━━━━
+
+لماذا 9MC مختلف؟
+
+لأننا لا نبيع عيادات فقط… بل نبني منظومة صحية متكاملة (Healthcare Destination) تعتمد على التشغيل الحقيقي، وأقوى شركاء النجاح، وأحدث التكنولوجيا.
+
+ولهذا صُمم المشروع ليقدم:
+
+✅ منظومة تشغيل احترافية جاهزة منذ افتتاح المشروع.
+✅ تشغيل وإدارة بواسطة Healthy Care، صاحبة الخبرة في تشغيل المراكز الطبية في مختلف أنحاء مصر.
+✅ تطبيق إلكتروني خاص بـ 9MC لإدارة المشروع بالكامل، وحجز المواعيد، وإدارة الخدمات الطبية، وربط المرضى بالأطباء في منظومة رقمية متكاملة منذ اليوم الأول.
+✅ استخدام أحدث تقنيات Smart Healthcare و Digital Twin والذكاء الاصطناعي في إدارة وتشغيل المشروع.
+✅ تصميم المشروع بما يتوافق مع متطلبات الجودة والاعتماد الصحي GAHAR، مع العمل على استيفاء الاشتراطات.
+✅ منظومة تشغيل حقيقية على أرض الواقع، تعظم نسب التشغيل، وترفع القيمة الاستثمارية للوحدات الطبية، وتوفر تجربة متكاملة للطبيب والمريض والمستثمر.
+
+━━━━━━━━━━
+
+9MC لم يُبنَ ليكون مجرد مبنى يضم عيادات… بل صُمم ليكون وجهة صحية متكاملة تجمع بين:
+
+✔️ تصميم عالمي.
+✔️ إدارة وتشغيل احترافي.
+✔️ تكنولوجيا ذكية.
+✔️ تشغيل طبي بقيادة Healthy Care.
+✔️ تطبيقات ذكية ومنظومة رقمية متكاملة منذ اليوم الأول.
+
+هذه ليست مجرد بداية مشروع… بل بداية معيار جديد للمشروعات الطبية في مصر.`,
     },
 
     sheetId: '17E11ww-CyTDu8ro4xXRiEji2COiv-CpTNTRAvVb8qtY',

@@ -499,11 +499,18 @@ function renderDetail() {
     $('sched').innerHTML = '';
     $('download').classList.add('hidden');
     $('share').classList.add('hidden');
+    /* The post survives where the PDF cannot. It quotes a price and a plan
+       image, both of which are known; only the payment terms are missing, and
+       js/post.js drops that line when there is no plan to compute it from. A
+       project with no terms yet is exactly the one an agent most wants to
+       start posting about. */
+    $('postBtn').classList.toggle('hidden', !CONFIG.post);
     $('downloadNote').textContent = '';
     return;
   }
   $('download').classList.remove('hidden');
   if (SHARE_FILES) $('share').classList.remove('hidden');
+  $('postBtn').classList.toggle('hidden', !CONFIG.post);
 
   for (const p of CONFIG.plans) {
     const btn = el('button', 'planbtn' + (state.planId === p.id ? ' on' : ''));
@@ -853,6 +860,28 @@ if (SHARE_FILES) {
 }
 $('share').onclick = () => issueOffer(true);
 $('download').onclick = () => issueOffer(false);
+
+/* ---- the WhatsApp post ----
+ * The second delivery path, for broker groups rather than a single customer.
+ * Everything it does lives in js/post.js; this is only the wiring. */
+$('postBtn').onclick = openPostSheet;
+for (const b of document.querySelectorAll('[data-post-close]')) b.onclick = closePostSheet;
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('postSheet').classList.contains('hidden')) closePostSheet();
+});
+$('postModes').onclick = (e) => {
+  const b = e.target.closest('button[data-mode]');
+  if (!b || b.dataset.mode === postState.mode) return;
+  postState.mode = b.dataset.mode;
+  renderPostPreview();
+};
+$('postTerms').onchange = (e) => { postState.terms = e.target.checked; $('postText').value = buildPostText(); };
+$('postSend').onclick = postShare;
+$('postCopy').onclick = async () => {
+  const ok = await postCopyText();
+  if (ok) postLog(`post-${postState.mode}-copied`);
+  postFlash(ok ? 'Copied. Paste it into WhatsApp.' : 'Could not copy — select the text and copy it.', !ok);
+};
 
 /* Offline support and installability. Registered late and failure-tolerant:
  * a service worker is a bonus, never a requirement, and it is unavailable on

@@ -804,11 +804,26 @@ async function deliverOffer(unit, plan, floor, contractDate = new Date()) {
   return 'downloaded';
 }
 
-/** Whether this browser can put a PDF into the system share sheet. */
+/**
+ * Whether this browser can put a PDF into the system share sheet.
+ *
+ * Capability alone is the wrong question, and asking it was a live bug: desktop
+ * Chrome on Windows answers yes to canShare({files}), then opens an OS flyout
+ * from navigator.share and NEVER settles the promise. issueOffer() re-enables
+ * its buttons in a `finally`, so that `finally` never ran and both buttons
+ * stayed dead until the page was reloaded — with no error anywhere, because a
+ * promise that never settles does not throw.
+ *
+ * So it must also be a mobile device. maxTouchPoints cannot answer that — a
+ * touchscreen laptop reports 10 — which is why this defers to the same
+ * userAgentData/pointer check telemetry uses. Desktop now falls through to the
+ * download path, which is what it should always have done.
+ */
 function canShareFiles() {
   try {
-    return typeof navigator !== 'undefined' && typeof navigator.canShare === 'function'
-      && navigator.canShare({ files: [new File([new Blob()], 'probe.pdf', { type: 'application/pdf' })] });
+    if (typeof navigator === 'undefined' || typeof navigator.canShare !== 'function') return false;
+    if (typeof telemetryDevice === 'function' && telemetryDevice() === 'desktop') return false;
+    return navigator.canShare({ files: [new File([new Blob()], 'probe.pdf', { type: 'application/pdf' })] });
   } catch {
     return false;
   }
