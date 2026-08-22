@@ -166,16 +166,36 @@ function buildPostText(mode = postState.mode) {
 
 /* ----------------------------------------------------------------- image -- */
 
-/** The print plan, decoded once and kept — it is a full-size render. */
-let postPlanImg = null;
+/**
+ * Decoded drawings, KEYED BY SRC. The full-size renders are worth keeping, but
+ * only against the file they actually came from.
+ *
+ * This was a single `postPlanImg` variable, and it was a live bug (reported
+ * 2026-08-22): one app serves EMC and 9MC, so the first project an agent
+ * opened a post for held the cache for the whole session. Post a 9MC clinic,
+ * switch to EMC, post again — and 9MC's aerial drawing came out, until the app
+ * was closed and reopened.
+ *
+ * Worse than a stale picture. `PLANS[CONFIG.planKey]` IS re-read on every call,
+ * so the second post drew EMC's traced room outlines and EMC's pins onto 9MC's
+ * drawing: a wrong plan, marked in the wrong places, going to a broker group.
+ * Anything cached across a project switch has to be keyed by the project, or by
+ * the thing it was built from.
+ */
+const postImgCache = new Map();
 
 function postLoadImage(src) {
-  return new Promise((resolve, reject) => {
+  if (postImgCache.has(src)) return postImgCache.get(src);
+  const p = new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error(`could not load ${src}`));
     img.src = src;
   });
+  // A failed decode must not be remembered as the answer forever.
+  p.catch(() => postImgCache.delete(src));
+  postImgCache.set(src, p);
+  return p;
 }
 
 /** Ray casting, in canvas space. Used to keep pins off each other. */
@@ -216,8 +236,7 @@ function drawPin(ctx, x, y, r) {
  * availability. See the note at the top of this file.
  */
 async function buildPinnedPlan(unit, floor) {
-  if (!postPlanImg) postPlanImg = await postLoadImage(CONFIG.planPrint);
-  const img = postPlanImg;
+  const img = await postLoadImage(CONFIG.planPrint);
   const P = PLANS[CONFIG.planKey];
 
   const scale = Math.min(1, POST_MAX_W / img.naturalWidth);

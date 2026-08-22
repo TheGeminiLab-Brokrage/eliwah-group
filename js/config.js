@@ -37,7 +37,7 @@ const GLOBAL = {
   telemetry: {
     url: 'https://ctlavvvxchusvqxbcmac.supabase.co/rest/v1/offer_events',
     key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bGF2dnZ4Y2h1c3ZxeGJjbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMDE1MTYsImV4cCI6MjEwMjY3NzUxNn0.UsyG7D8LRh0Abno0k7QfrZ96MqjJM6FvMj8jeB8Q_c4',
-    version: 'eliwah-offers-v7',  // set to the sw.js cache name on each deploy
+    version: 'eliwah-offers-v8',  // set to the sw.js cache name on each deploy
   },
 };
 
@@ -65,7 +65,10 @@ const PROJECTS = [
     ...GLOBAL,
     id: 'emc',
     name: 'EMC',
-    subtitle: 'Eliwah Medical Center',
+    /* "EastHUB", not "Eliwah" — confirmed by the user 2026-08-22. This said
+     * Eliwah Medical Center from the first build and it was wrong, so every
+     * offer issued before this date carries the wrong project name. */
+    subtitle: 'EastHUB Medical Center',
     location: 'El Yasmeen, New Cairo',
     blurb: 'Multi-specialty medical center · G+3',
     card: 'assets/pdf/hero.jpg',
@@ -109,13 +112,12 @@ const PROJECTS = [
      * this exact wording by hand. Edit it here and every agent's post changes;
      * that is the point of the feature.
      *
-     * NOTE — the team's post heads this project "EastHUB Medical Center" while
-     * this file has always called it "Eliwah Medical Center", and that name is
-     * on every PDF. One of the two is wrong. Unresolved; `title` below follows
-     * the app so both outputs at least agree. Change this one line once the
-     * client confirms which it is. */
+     * The project is "EastHUB Medical Center". Confirmed by the user
+     * 2026-08-22, settling a disagreement between the sales team's own post and
+     * this file, which had said "Eliwah Medical Center" since the first build —
+     * and had therefore printed the wrong name on every offer issued so far. */
     post: {
-      title: '🏥 EMC | Eliwah Medical Center',
+      title: '🏥 EMC | EastHUB Medical Center',
       place: 'New Cairo',
       unitNoun: 'عيادة طبية',
       unitNounDual: 'عيادتين مدمجتين',

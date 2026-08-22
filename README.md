@@ -19,7 +19,7 @@ Two projects are connected, both reading their own published Google Sheet:
 
 | Project | Building | Inventory | Offers |
 |---|---|---|---|
-| **EMC** — Eliwah Medical Center, El Yasmeen, New Cairo | G+3; 34 clinics per medical floor, second and third | live | yes |
+| **EMC** — EastHUB Medical Center, El Yasmeen, New Cairo | G+3; 34 clinics per medical floor, second and third | live | yes |
 | **9MC** — 99 Medical Center, MU23, New Capital | 37 clinics per floor, third to ninth | live | yes |
 
 Note they are in **different cities**. Every piece of project content in the PDF —
