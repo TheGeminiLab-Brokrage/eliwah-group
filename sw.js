@@ -18,7 +18,7 @@
  * v6 — offer analytics: each issued offer is recorded (2026-08-19).
  * v3 — inventory prefetched at boot, and a timeout on the sheet fetch.
  * v2 — combined offers, traced room outlines, no phone on the offer (2026-08-13). */
-const CACHE = 'eliwah-offers-v8';
+const CACHE = 'eliwah-offers-v9';
 
 /* Code is revalidated; artwork is not.
  *

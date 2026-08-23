@@ -676,15 +676,35 @@ async function takePrefetchedSheet(projectId) {
   if (!pending) return null;
   sheetPrefetch.delete(projectId);
   const res = await pending;
-  if (!res || !res.text) return null;
+  if (!res) return null;
+
+  /* A prefetch that FAILED is still an answer, and it is returned rather than
+   * discarded. Returning null here made load() go and fetch the same dead sheet
+   * a second time, and each attempt is capped at SHEET_BUDGET_MS — so a stalled
+   * Google meant 14 seconds of waiting, then 14 more, before the saved copy
+   * appeared. Measured at 28 seconds of blank screen; it was 40 before the
+   * budget existed.
+   *
+   * Handing the failure straight through cuts that in half: the app shows the
+   * saved copy as soon as the first attempt gives up. Nothing is lost, because
+   * a retry is already guaranteed from two directions — the 60-second poll, and
+   * the Refresh button, which passes `fresh` and skips the prefetch entirely. */
+  if (!res.text) return res;
+
   if (Date.now() - res.at > SHEET_PREFETCH_MAX_AGE_MS) return null;
   return res;
 }
 
 /* ---------------- boot ---------------- */
-async function load({ fresh = false } = {}) {
-  $('refresh').disabled = true;
-  $('syncText').textContent = 'Loading inventory…';
+/**
+ * @param {boolean} fresh  Skip the prefetch and go to the network.
+ * @param {boolean} quiet  A background poll: leave the controls alone.
+ */
+async function load({ fresh = false, quiet = false } = {}) {
+  if (!quiet) {
+    $('refresh').disabled = true;
+    $('syncText').textContent = 'Loading inventory…';
+  }
 
   const pre = fresh ? null : await takePrefetchedSheet(state.projectId);
   const res = await loadInventory(activePlan().areas, pre);
@@ -715,7 +735,13 @@ async function load({ fresh = false } = {}) {
   if (state.floorKey) { renderPlan(); renderUnits(); }
   renderPicked();
   if (state.picked.length) renderDetail();
-  openFromHash();
+
+  /* NOT on a background poll. openFromHash() re-applies whatever unit the URL
+     names, and scrolls to it. On the deliberate paths that is the point; fired
+     every sixty seconds it would be a trap — an agent who opened a shared link
+     to C313 and then picked C319 to compare would be yanked back to C313, and
+     the page scrolled, in the middle of talking to a customer. */
+  if (!quiet) openFromHash();
 }
 
 /**
@@ -894,6 +920,33 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       .catch((err) => console.warn('service worker not registered:', err.message));
   });
 }
+
+/* ---- keeping the inventory current ----
+ *
+ * This app used to fetch the sheet ONCE per project and never again. Combined
+ * with the 6-second timeout in js/sheet.js, that made a brief stall permanent:
+ * Google was slow for a moment on 2026-08-23, the fetch was aborted, the app
+ * fell back to the snapshot baked in at build time — and then sat on those
+ * stale prices for the rest of the session, because nothing ever retried. The
+ * agent's only way out was closing the app and reopening it, which is exactly
+ * what was reported.
+ *
+ * A short timeout is the right call on its own; giving up and never trying
+ * again is not. Both halves are needed, and the sibling Qomor build already had
+ * this half.
+ *
+ * `quiet: true` refreshes without putting the button into its loading state, so
+ * a background poll cannot make the app look busy while someone is reading a
+ * payment schedule off it. */
+const REFRESH_MS = 60 * 1000;
+
+// Coming back to the tab is the moment an agent is about to quote a price.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.projectId) load({ fresh: true, quiet: true });
+});
+setInterval(() => {
+  if (!document.hidden && state.projectId) load({ fresh: true, quiet: true });
+}, REFRESH_MS);
 
 /* ---------------- boot ---------------- */
 renderProjects();

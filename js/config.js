@@ -37,7 +37,7 @@ const GLOBAL = {
   telemetry: {
     url: 'https://ctlavvvxchusvqxbcmac.supabase.co/rest/v1/offer_events',
     key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bGF2dnZ4Y2h1c3ZxeGJjbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMDE1MTYsImV4cCI6MjEwMjY3NzUxNn0.UsyG7D8LRh0Abno0k7QfrZ96MqjJM6FvMj8jeB8Q_c4',
-    version: 'eliwah-offers-v8',  // set to the sw.js cache name on each deploy
+    version: 'eliwah-offers-v9',  // set to the sw.js cache name on each deploy
   },
 };
 

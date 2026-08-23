@@ -525,6 +525,30 @@ function openPostSheet() {
   document.body.classList.add('noscroll');
   postFlash('');
   renderPostPreview();
+  warnIfStale();
+}
+
+/**
+ * A post must not quietly carry a price the app is unsure about.
+ *
+ * This is the one delivery path where a wrong number cannot be taken back. A
+ * PDF goes to one customer, who can be sent a corrected one; a post goes into
+ * broker groups and is forwarded, screenshotted and quoted for weeks. And the
+ * app IS sometimes unsure: when the sheet cannot be reached it falls back to
+ * prices baked in at build time and marks itself stale — which is easy to miss
+ * in a header bar while the unit card in front of you looks perfectly normal.
+ *
+ * Not a hard block. The agent may have good reason — an old price beats a
+ * missed post on a unit that has not moved in months, and they can see the date
+ * and judge for themselves. But it has to be a decision rather than an
+ * accident, so the warning sits inside the sheet beside the Send button
+ * instead of up in the header where it was already being missed.
+ */
+function warnIfStale() {
+  if (state.live) return;
+  const when = state.fetchedAt ? state.fetchedAt.toLocaleDateString() : 'an unknown date';
+  postFlash(`⚠ These are SAVED prices from ${when}, not live — the inventory sheet `
+    + 'could not be reached. Press Refresh before posting this to a group.', true);
 }
 
 function closePostSheet() {

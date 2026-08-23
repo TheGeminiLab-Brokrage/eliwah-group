@@ -191,8 +191,25 @@ function normalizeRows(rows, planAreas) {
 }
 
 /* A hung connection otherwise never resolves, and the app spins on "Loading
- * inventory…" forever instead of falling back to the saved copy. */
-const SHEET_TIMEOUT_MS = 6000;
+ * inventory…" forever instead of falling back to the saved copy.
+ *
+ * Six seconds until 2026-08-23, which was too eager on its own: a sheet that
+ * was merely slow — and Google was measurably slow that day — dropped the app
+ * onto build-time prices, where it then STAYED, because nothing polled. The
+ * recovery half is now in app.js, and with it in place this can afford to wait
+ * a little longer before deciding the sheet is unreachable. Ten matches the
+ * Qomor build. */
+const SHEET_TIMEOUT_MS = 10000;
+
+/* And a ceiling for the whole URL list.
+ *
+ * Both endpoints serve the same tab, so a flat per-URL timeout made the worst
+ * case 10s + 10s = 20 seconds of blank screen per project — and app.js starts
+ * one of these for BOTH projects at boot, which measured at 40 seconds before
+ * anything appeared. The second URL is still worth trying after the first times
+ * out (on 2026-08-23 the gviz endpoint returned nothing after 45s while export
+ * answered the same sheet in 0.6s), it just has to fit inside the budget. */
+const SHEET_BUDGET_MS = 14000;
 
 /**
  * Fetch the published CSV, trying each URL in turn. Returns the raw text.
@@ -206,10 +223,15 @@ const SHEET_TIMEOUT_MS = 6000;
  */
 async function fetchSheetCSV(urls) {
   const errors = [];
+  const deadline = Date.now() + SHEET_BUDGET_MS;
 
   for (const url of urls) {
+    const left = deadline - Date.now();
+    // Under two seconds left is not a fair try; call it and fall back.
+    if (left < 2000) { errors.push('out of time'); break; }
+    const budget = Math.min(SHEET_TIMEOUT_MS, left);
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(() => ctrl.abort(), SHEET_TIMEOUT_MS) : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), budget) : null;
     try {
       const res = await fetch(url, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
       if (!res.ok) { errors.push(`${res.status} from ${new URL(url).pathname}`); continue; }
@@ -219,7 +241,7 @@ async function fetchSheetCSV(urls) {
       return { text, at: Date.now(), errors };
     } catch (err) {
       errors.push(err && err.name === 'AbortError'
-        ? `no answer from ${new URL(url).hostname} within ${SHEET_TIMEOUT_MS / 1000}s`
+        ? `no answer from ${new URL(url).hostname} within ${Math.round(budget / 1000)}s`
         : err.message);
     } finally {
       if (timer) clearTimeout(timer);
