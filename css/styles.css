@@ -501,3 +501,30 @@ body.noscroll { overflow: hidden; }
   .money input { font-size: 19px; }
   #budgetBody .refine select { flex: 1; min-width: 120px; }
 }
+
+/* Search by budget — the cash-timing lines.
+ *
+ * Year one sits directly under the headline pair because it is the number that
+ * makes two plans comparable: on 9MC the 10% and 20% plans want the same cash
+ * on contract, and only this line shows that one of them wants 243,000 more
+ * before the first year is out.
+ *
+ * The second down payment is deliberately NOT styled like the maintenance note
+ * below it. Maintenance is the same on every plan and never changes which plan
+ * wins; a second down payment is the whole reason one plan can look cheapest.
+ * It gets weight, and a red state when the customer's cash would not cover it. */
+.hit .year1 {
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line);
+  font-size: 11px; color: #46606d; font-weight: 600;
+}
+.hit .second {
+  margin-top: 8px; padding: 7px 9px; border-radius: 8px; line-height: 1.5;
+  background: #fff6e0; border: 1px solid #f0d79a; color: #6b4e00; font-size: 11px;
+}
+.hit .second b { font-weight: 700; }
+.hit .second.risk { background: #fdecec; border-color: #f0b4b4; color: #8a2020; }
+.hit .second .gap { display: block; margin-top: 3px; font-weight: 600; }
+/* A plan whose down payment arrives in parts says so on its own chip, quietly
+   but always — two 9MC plans want identical cash on contract and only this
+   tells them apart at a glance. */
+.planchip.split small { display: block; margin-top: 1px; font-size: 9.5px; opacity: .8; }

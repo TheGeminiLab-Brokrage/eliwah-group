@@ -125,7 +125,23 @@ const afford = (function () {
     const later = parts.filter((p) => p.month > 0);
     const downNow = onContract.reduce((t, p) => t + p.amount, 0);
 
+    /* CASH OUT IN THE FIRST TWELVE MONTHS — the one number that makes plans
+       comparable, and the reason this card was misleading without it.
+       On 9MC the 10% and 20% plans ask for the SAME 360,000 on contract, but
+       the 20% plan wants another 360,000 at month 12 and has the lowest
+       instalment of any plan — so it wins the sort, shows the friendliest pair
+       of numbers on the card, and is quietly the most cash-hungry plan there
+       is: 1,008,000 in year one against the 10% plan's 765,000.
+       Maintenance is excluded on purpose: it falls at month 18 (EMC) and 30
+       (9MC), so it is never inside year one, and it is identical across plans,
+       which means it can never explain why one plan beats another. */
+    let year1 = 0;
+    for (const r of built.rows) {
+      if ((r.down || r.instalment) && r.month <= 12) year1 += r.amount;
+    }
+
     return {
+      year1,
       unit,
       floorKey: configFloorKey(unit),
       projectId: project.id,
@@ -135,7 +151,7 @@ const afford = (function () {
       years: plan.years,
       down: downNow,
       downPct: onContract.reduce((t, p) => t + p.pct, 0),
-      downLater: later.map((p) => ({ amount: p.amount, month: p.month })),
+      downLater: later.map((p) => ({ amount: p.amount, month: p.month, pct: p.pct })),
       instalment,
       maintenance: s.maintenance,
       maintenanceMonth: CONFIG.maintenanceDueMonth,
@@ -310,21 +326,49 @@ const afford = (function () {
        one without the other: the customer is billed the quarterly one. */
     head.appendChild(money('~' + group(c.instalment / 3), '/ month',
                            `${group(c.instalment)} every 3 months`));
+    /* "down NOW", not "down" — on 9MC's 20% plan this figure is the 10% due at
+       signing, while the plan is named for the full 20%. Saying just "down"
+       next to a plan called "20% Down Payment" reads as a contradiction. */
     head.appendChild(money(group(c.down), null,
-                           `down · ${Math.round(c.downPct * 100)}%`));
+                           `down now · ${Math.round(c.downPct * 100)}%`));
     n.appendChild(head);
+
+    /* Year one, on every card and every plan. Without it the two 9MC plans that
+       ask for identical cash on contract look identical on cash, and the one
+       that needs 243,000 more in year one is the one that looks cheapest. */
+    n.appendChild(el('div', 'year1', `${group(c.year1)} ${CONFIG.currency} needed in the first year`));
 
     const facts = el('div', 'facts');
     const fact = (html) => { const s = el('span'); s.innerHTML = html; facts.appendChild(s); };
     if (u.area) fact(`<b>${area(u.area)}</b> m²`);
     fact(`Price <b>${group(c.price)}</b> ${CONFIG.currency}`);
-    fact(`On the <b>${c.planLabel}</b> plan · ${c.years} years`);
+    /* Spell the split out beside the plan name. The plan is CALLED "20% Down
+       Payment" but the figure above it reads "down now · 10%", and the two look
+       like a contradiction until you know the 20% arrives in two halves. The
+       name itself is left alone — js/pdf.js and js/telemetry.js both print
+       plan.label, and the offer document should keep the client's own wording. */
+    const split = c.downLater.length
+      ? ` (${Math.round(c.downPct * 100)}% now + `
+        + c.downLater.map((d) => `${Math.round(d.pct * 100)}% at month ${d.month}`).join(' + ') + ')'
+      : '';
+    fact(`On the <b>${c.planLabel}</b> plan${split} · ${c.years} years`);
     n.appendChild(facts);
 
     if (hit.fits.length > 1) {
       const row = el('div', 'planrow');
       for (const f of hit.fits) {
+        /* The chips are where an agent compares plans, and it is where the two
+           9MC plans look most alike: "10% Down Payment" and "20% Down Payment"
+           both want exactly 360,000 on contract. Naming the split on the chip
+           is what stops them reading as a straight choice between more and less
+           cash down. */
         const b = el('button', 'planchip' + (f.planId === c.planId ? ' on' : ''), f.planLabel);
+        if (f.downLater.length) {
+          b.classList.add('split');
+          b.appendChild(el('small', null,
+            ` ${Math.round(f.downPct * 100)}% now, `
+            + f.downLater.map((d) => `${Math.round(d.pct * 100)}% at m${d.month}`).join(' + ')));
+        }
         b.type = 'button';
         b.onclick = () => { S.picked[u.code] = f.planId; draw(); };
         row.appendChild(b);
@@ -332,13 +376,33 @@ const afford = (function () {
       n.appendChild(row);
     }
 
-    /* What the monthly figure does not include. Both are real payments on known
-       dates, and the second down payment is easy to forget because it looks
-       like part of the down payment rather than a separate one. */
-    const items = [];
-    for (const d of c.downLater) items.push(`${group(d.amount)} at month ${d.month}`);
-    items.push(`maintenance ${group(c.maintenance)} at month ${c.maintenanceMonth}`);
-    n.appendChild(el('div', 'spike', 'Also due: ' + items.join(' · ')));
+    /* A SECOND DOWN PAYMENT AND THE MAINTENANCE ARE NOT THE SAME KIND OF THING,
+       and lumping them into one "Also due" line is what hid the first one.
+       Maintenance is a constant: same rate on every plan, so it can never
+       explain why one plan looks cheaper than another. A second down payment is
+       a variable, and on 9MC it is the entire reason the 20% plan shows the
+       lowest instalment in the project. It gets its own line, above. */
+    for (const d of c.downLater) {
+      const line = el('div', 'second');
+      line.appendChild(el('b', null, `Second payment ${group(d.amount)} ${CONFIG.currency}`));
+      line.appendChild(document.createTextNode(` due at month ${d.month}, on top of the instalments.`));
+
+      /* Only warn when it is actually a risk. The cash they entered pays the
+         down payment first; what is left is what they have towards this. Most
+         customers fund it out of income over the year, so a blanket warning
+         would be noise — this one fires only when the gap is real. */
+      const leftOver = S.down - c.down;
+      if (d.amount > leftOver) {
+        line.classList.add('risk');
+        line.appendChild(el('span', 'gap',
+          `Their cash covers ${group(Math.max(leftOver, 0))} of it — check they can find `
+          + `${group(d.amount - Math.max(leftOver, 0))} more within the year.`));
+      }
+      n.appendChild(line);
+    }
+
+    n.appendChild(el('div', 'spike',
+      `Also due: maintenance ${group(c.maintenance)} ${CONFIG.currency} at month ${c.maintenanceMonth}.`));
 
     const foot = el('div', 'foot');
     const go = el('button', 'cta', 'Build this offer');
@@ -415,8 +479,32 @@ const afford = (function () {
   }
 
   function renderNothing(box) {
-    const near = nearestMiss();
     box.textContent = '';
+
+    /* A CASH BUYER IS NOT A CUSTOMER WHO CAN AFFORD NOTHING. With no monthly
+       budget the quarterly ceiling is zero, so no instalment can ever clear it
+       and every clinic falls out — and the honest-sounding "Nothing fits that
+       budget" is then flatly wrong to someone holding five million in cash.
+       Say what is actually true and point at the plan that serves them. The
+       discount differs by project (EMC 25%, 9MC 30%), so it is read from the
+       plans rather than stated. */
+    if (S.monthly <= 0) {
+      box.appendChild(el('p', null,
+        'No monthly budget entered, so there is no instalment to match. '
+        + 'Enter one to search the payment plans.'));
+      const rates = inScope().map((p) => withProject(p.id, () => {
+        const cash = CONFIG.plans.find((x) => x.cash);
+        return cash ? `${p.name} ${Math.round(cash.discount * 100)}%` : null;
+      })).filter(Boolean);
+      if (rates.length) {
+        box.appendChild(el('p', 'act',
+          `Paying in full instead? Open any clinic and choose the Cash plan — `
+          + `it carries a discount of ${rates.join(' · ')}.`));
+      }
+      return;
+    }
+
+    const near = nearestMiss();
     if (!near) {
       box.textContent = 'No available clinics match those filters at all.';
       return;
