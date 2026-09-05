@@ -393,10 +393,14 @@ const afford = (function () {
     if (!next) { box.hidden = true; return; }
     const monthly = next.kind === 'monthly';
 
+    /* The GAP, not the new total. What an agent has to say out loud is "another
+       ten thousand a month", and a customer who has just typed their budget
+       does not want to do the subtraction to find that out. The "nothing fits"
+       line below is phrased the same way for the same reason. */
     box.hidden = false;
     box.textContent = (monthly
-      ? `Raise the monthly budget to ${group(next.value)}`
-      : `Raise the cash to ${group(next.value)}`)
+      ? `Add ${group(next.value - S.monthly)} a month`
+      : `Add ${group(next.value - S.down)} in cash`)
       + ` and ${next.n === 1 ? 'one more clinic comes' : `${next.n} more clinics come`} into reach. `;
 
     const apply = el('button', null, 'Apply');
