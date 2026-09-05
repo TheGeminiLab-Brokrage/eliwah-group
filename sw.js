@@ -11,14 +11,15 @@
  *
  * Bump CACHE when the app shell changes, or returning phones keep the old one.
  */
-/* v5 — the shell is no longer downloaded twice on a first visit, and app code
+/* v10 — search by budget: js/afford.js joins the shell (2026-09-05).
+ * v5 — the shell is no longer downloaded twice on a first visit, and app code
  *      is revalidated instead of frozen. Both found on Qomor (2026-08-14),
  *      which was built from this app and inherited them.
  * v4 — jsPDF deferred so it stops delaying the inventory fetch on a cold visit.
  * v6 — offer analytics: each issued offer is recorded (2026-08-19).
  * v3 — inventory prefetched at boot, and a timeout on the sheet fetch.
  * v2 — combined offers, traced room outlines, no phone on the offer (2026-08-13). */
-const CACHE = 'eliwah-offers-v9';
+const CACHE = 'eliwah-offers-v10';
 
 /* Code is revalidated; artwork is not.
  *
@@ -54,6 +55,7 @@ const SHELL = [
   'js/telemetry.js',
   'js/pdf.js',
   'js/post.js',
+  'js/afford.js',
   'js/app.js',
   'vendor/jspdf.umd.min.js',
   'site.webmanifest',

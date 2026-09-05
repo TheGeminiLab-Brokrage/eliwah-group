@@ -370,3 +370,134 @@ body.noscroll { overflow: hidden; }
   border: 1px solid var(--line); border-radius: 10px; background: #fff;
 }
 #postNote.bad { color: var(--sold); }
+
+/* ===================================================== search by budget ====
+   Step 0: the customer arrives with a budget rather than a clinic. Light
+   theme, on this app's own tokens — the Qomor build this came from is dark and
+   amber, and copying its palette here would look like a different product.
+   See js/afford.js. */
+
+#budgetStep { margin-bottom: 22px; }
+.budget-cta {
+  display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+  padding: 13px 16px; border-radius: var(--radius); cursor: pointer;
+  background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow);
+  font: inherit; color: var(--ink);
+}
+.budget-cta:hover { border-color: var(--brand); }
+.budget-cta .bc-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.budget-cta b { font-size: 15px; }
+.budget-cta i { font-style: normal; font-size: 12.5px; color: #5b7180; }
+.budget-cta .bc-mark {
+  flex: none; display: grid; place-items: center; width: 26px; height: 26px;
+  border-radius: 50%; background: var(--brand); color: #fff; font-size: 17px; line-height: 1;
+}
+#budgetStep.open .budget-cta { border-color: var(--brand); }
+#budgetStep.open .bc-mark { transform: rotate(45deg); }
+
+#budgetBody {
+  margin-top: 12px; padding: 16px; border-radius: var(--radius);
+  background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.budget { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.budget label { display: block; }
+.budget .lab {
+  display: block; font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+  color: #6d8794; margin-bottom: 6px;
+}
+.budget .hint { display: block; font-size: 11.5px; color: #6d8794; margin-top: 5px; }
+.money {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 11px; padding: 0 12px;
+}
+.money:focus-within { border-color: var(--brand); }
+.money input {
+  flex: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--ink);
+  font: 600 21px/1 inherit; padding: 13px 0;
+}
+.money .cur { font-size: 11px; color: #6d8794; letter-spacing: .06em; }
+
+#budgetBody .refine { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 13px; align-items: center; }
+#budgetBody .refine select {
+  background: var(--card); border: 1px solid var(--line); border-radius: 9px;
+  color: var(--ink); font: inherit; font-size: 12.5px; padding: 8px 10px;
+}
+
+.bnote { margin: 14px 0 0; font-size: 12.5px; color: var(--warn); }
+
+#budgetBody .tally {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 9px;
+  margin: 18px 0 11px; padding-bottom: 10px; border-bottom: 1px solid var(--line);
+}
+#budgetBody .tally .big { font-size: 25px; font-weight: 700; color: var(--brand-dark); }
+#budgetBody .tally .of { font-size: 12.5px; color: #5b7180; }
+
+.hits { display: grid; grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: 11px; }
+.hit {
+  border-radius: var(--radius); background: var(--card); border: 1px solid var(--line);
+  padding: 13px; display: flex; flex-direction: column; gap: 10px;
+}
+.hit:hover { border-color: var(--brand); }
+.hit .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hit .id {
+  font: 700 12px/1 inherit; letter-spacing: .04em; padding: 6px 9px; border-radius: 7px;
+  background: var(--brand); color: #fff;
+}
+.hit .proj {
+  font-size: 10px; letter-spacing: .05em; padding: 5px 8px; border-radius: 6px;
+  background: var(--bg); border: 1px solid var(--line); color: var(--brand-ink); font-weight: 600;
+}
+.hit .where { font-size: 11.5px; color: #6d8794; margin-left: auto; }
+.hit .headline { display: flex; gap: 14px; align-items: flex-end; }
+.hit .headline > div { flex: 1; min-width: 0; }
+.hit .headline .n { font-size: 21px; font-weight: 700; line-height: 1.15; }
+.hit .headline .n small { font-size: 11px; font-weight: 500; color: #6d8794; }
+.hit .headline .k { font-size: 10px; color: #6d8794; margin-top: 4px; }
+.hit .facts { display: flex; flex-wrap: wrap; gap: 4px 13px; font-size: 11.5px; color: #5b7180; }
+.hit .facts b { color: var(--ink); font-weight: 600; }
+.hit .planrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.planchip {
+  font-size: 11px; padding: 6px 9px; border-radius: 999px; cursor: pointer;
+  background: var(--bg); border: 1px solid var(--line); color: #5b7180; font: inherit; font-size: 11px;
+}
+.planchip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.hit .spike { font-size: 11px; color: #6b4e00; line-height: 1.55; }
+.hit .foot { margin-top: auto; }
+.hit .foot .cta {
+  width: 100%; padding: 9px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  background: var(--brand); color: #fff; border: 0; border-radius: 9px; font-family: inherit;
+}
+.hit .foot .cta:hover { background: var(--brand-dark); }
+
+#budgetBody .more {
+  display: block; margin: 16px auto 0; cursor: pointer; font: inherit; font-size: 13px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 15px;
+}
+.stretch {
+  margin: 16px 0 0; padding: 12px 14px; border-radius: 12px;
+  background: #e7f6fa; border: 1px solid #b9e3ee; font-size: 12.5px; line-height: 1.65;
+}
+.stretch button {
+  background: none; border: 0; padding: 0; color: var(--brand-dark); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px; font: inherit; font-size: 12.5px;
+}
+.nothing {
+  margin-top: 16px; padding: 17px; border-radius: 12px;
+  background: var(--bg); border: 1px solid var(--line); font-size: 13px; line-height: 1.7;
+}
+.nothing p { margin: 0; }
+.nothing .act { margin-top: 10px; }
+.nothing .cta.small {
+  display: inline-block; width: auto; padding: 8px 16px; font-size: 12.5px; cursor: pointer;
+  background: var(--brand); color: #fff; border: 0; border-radius: 9px; font: inherit;
+  font-size: 12.5px; font-weight: 600;
+}
+
+/* `hidden` is only a UA display:none, so any display rule above beats it. */
+[hidden] { display: none !important; }
+
+@media (max-width: 560px) {
+  .budget { grid-template-columns: 1fr; }
+  .money input { font-size: 19px; }
+  #budgetBody .refine select { flex: 1; min-width: 120px; }
+}

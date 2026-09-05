@@ -127,6 +127,8 @@ async function selectProject(id) {
   $('planStep').classList.add('hidden');
   $('detailStep').classList.add('hidden');
   $('floorStep').classList.remove('hidden');
+  // Search by budget becomes available once there is a project to search in.
+  $('budgetStep').classList.remove('hidden');
   $('floorHint').textContent = CONFIG.floors.some((f) => f.use === 'Retail')
     ? 'Ground & First are retail; Second & Third are medical.' : '';
 
@@ -732,6 +734,11 @@ async function load({ fresh = false, quiet = false } = {}) {
   renderSync();
   renderWarnings();
   renderFloors();
+  /* The budget search prices every available clinic, so it has to be re-priced
+     from the same read that redraws everything else — otherwise a clinic sold
+     in the sheet would go on being offered here after it vanished from the
+     plan, which is the one failure this app exists to prevent. */
+  afford.rebuild();
   if (state.floorKey) { renderPlan(); renderUnits(); }
   renderPicked();
   if (state.picked.length) renderDetail();
@@ -952,6 +959,10 @@ setInterval(() => {
 renderProjects();
 // Before anything else: get both sheets moving while the agent reads the cards.
 prefetchSheets();
+/* Bound before the deep-link branch below: selectProject() runs load(), which
+   calls afford.rebuild(), and rebuild draws into controls that init() is what
+   wires up. Binding after would leave a first search with dead inputs. */
+afford.init();
 if (location.hash) {
   // Deep link — open the named project, or the first live one if the link is
   // just a unit code, so the hash can resolve against its inventory.

@@ -50,6 +50,68 @@
     <div class="projects" id="projects"></div>
   </section>
 
+  <!-- Search by budget. Revealed with the floor step, because "this project"
+       has no meaning until a project is chosen — and the scope switch inside it
+       is what opens the search out to both. Collapsed, so an agent who already
+       knows the clinic never scrolls past it. See js/afford.js. -->
+  <section class="step hidden" id="budgetStep">
+    <button class="budget-cta" id="budgetOpen" type="button" aria-expanded="false">
+      <span class="bc-text">
+        <b>Customer has a budget in mind?</b>
+        <i>Find every clinic that fits it</i>
+      </span>
+      <span class="bc-mark" aria-hidden="true">+</span>
+    </button>
+
+    <div id="budgetBody" hidden>
+      <div class="budget">
+        <label>
+          <span class="lab">Cash available now</span>
+          <span class="money">
+            <input id="inDown" inputmode="numeric" enterkeyhint="done" autocomplete="off" value="1,000,000">
+            <span class="cur">EGP</span>
+          </span>
+          <span class="hint">Pays the down payment on contract.</span>
+        </label>
+        <label>
+          <span class="lab">Budget per month</span>
+          <span class="money">
+            <input id="inMonthly" inputmode="numeric" enterkeyhint="done" autocomplete="off" value="40,000">
+            <span class="cur">EGP</span>
+          </span>
+          <span class="hint" id="qHint"></span>
+        </label>
+      </div>
+
+      <div class="refine">
+        <!-- Scope. Defaults to the project already chosen; "Both" pulls the
+             other inventory on demand, so opening the app costs nothing. -->
+        <div class="seg" id="scopeSeg">
+          <button type="button" data-scope="this" class="on">This project</button>
+          <button type="button" data-scope="both">Both projects</button>
+        </div>
+        <select id="inFloorSel"></select>
+        <select id="inSort">
+          <option value="area-desc">Biggest clinic first</option>
+          <option value="monthly">Lowest monthly first</option>
+          <option value="price">Cheapest first</option>
+          <option value="price-desc">Most expensive first</option>
+        </select>
+      </div>
+
+      <p class="bnote" id="scopeNote" hidden></p>
+
+      <div class="tally" id="tally" hidden>
+        <span class="big" id="tallyBig">—</span>
+        <span class="of" id="tallyOf"></span>
+      </div>
+      <div class="hits" id="hits"></div>
+      <button class="more" id="btnMore" type="button" hidden></button>
+      <p class="stretch" id="stretch" hidden></p>
+      <div class="nothing" id="nothing" hidden></div>
+    </div>
+  </section>
+
   <section class="step hidden" id="floorStep">
     <div class="step-head">
       <span class="step-num">2</span>
@@ -170,6 +232,9 @@
 <script src="js/telemetry.js"></script>
 <script src="js/pdf.js"></script>
 <script src="js/post.js"></script>
+<!-- Search by budget. Loaded BEFORE app.js, which calls its afford.rebuild()
+     whenever the inventory changes. -->
+<script src="js/afford.js"></script>
 <script src="js/app.js"></script>
 
 <!-- jsPDF last, and deferred, because it is 420KB and nothing needs it until
