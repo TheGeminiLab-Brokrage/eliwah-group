@@ -103,9 +103,23 @@ Delete the entry once ops fix the sheet; the app then just uses the sheet.
 **Currently empty, on purpose.** MC922 was overridden here to force the
 drawing's 19 m² over the sheet's 23 m². Operations later confirmed **23 m² is
 correct** and withdrew the unit, so the override was wrong and has been removed.
-Note the drawing still prints 19 m² for clinic 22 — if that unit ever returns to
-the sheet at 23 m², the app will flag the mismatch again, which is the right
-behaviour: one of the two sources needs correcting.
+The revised 9MC master plan (2026-10-01, `raw/9mc-masterplan-2026-10-01.pdf`)
+now prints 23 m² for clinic 22, so the drawing and operations agree on it.
+
+That revision also changed clinic 27 from 28 to **29 m²** and clinic 28 from 29
+to **33 m²**, while the sheet still says 28 and 29 for MC927 / MC928. The app
+flags both on load, which is the right behaviour: one of the two sources needs
+correcting. Clinic 28's traced outline (about 34.5 m²) supports the drawing.
+Prices still come from the sheet.
+
+To replace the 9MC drawing again: render page 2 of the new PDF with `pdftoppm`
+and crop to the box the outlines were traced against — at 150 dpi
+`-x 915 -y 644 -W 1729 -H 786` for `assets/plan-9mc.jpg` and `raw/map9.png`, at
+300 dpi `-x 1830 -y 1288 -W 3457 -H 1571` for `assets/pdf/plan-9mc.jpg`. Check
+the new page still lines up with the old one first (the 2026-10-01 page sat 2px
+lower-right at 300 dpi than the original), then run
+`node scripts/verify-plan.js mc9` and bump `CACHE` in `sw.js` — artwork is
+cached on phones until it changes.
 
 ## Adding a project
 

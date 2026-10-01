@@ -385,7 +385,10 @@ console.log('\n9MC payment plans');
 G.setProject('mc9');
 const C9 = G.cfg();
 const r9b = G.normalizeRows(G.parseCSV(G.SNAPSHOTS.mc9.csv), G.PLANS.mc9.areas);
-const u9 = r9b.units.find((u) => u.code === 'MC924');   // 80 m², 6,400,000
+/* A fixed unit, not one picked out of the snapshot: MC924 used to be read from
+ * there, and the suite crashed the day it sold and left the sheet (2026-10-01). */
+const u9 = G.normalizeRows(G.parseCSV('PROJECT,Type,Floor,Unit Code,Indoor area,Indoor meter price,Total unit price,Status\n'
+  + '9MC,CLINIC,Nineth,MC924,80,"80,000.00","6,400,000.00",Available'), G.PLANS.mc9.areas).units[0];   // 80 m², 6,400,000
 const CONTRACT = new Date(2026, 7, 11);                 // 11 Aug 2026
 
 check('no 9MC unit is on hold', r9b.units.filter((u) => u.state === 'held').length === 0);

@@ -159,12 +159,19 @@ const MC9_PINS_RAW = {
   37: [508, 320],
 };
 
-/** m² printed on the 9MC drawing — cross-checked against the sheet at load. */
+/** m² printed on the 9MC drawing — cross-checked against the sheet at load.
+ *
+ * Re-read off the revised master plan the client sent 2026-10-01
+ * (raw/9mc-masterplan-2026-10-01.pdf, page 2). Same building, same position on
+ * the page (shifted 2px at 300dpi, corrected in the crop), so the traced
+ * outlines below still fit. Three labels changed: 22 is 19 → 23, 27 is 28 → 29,
+ * 28 is 29 → 33. The sheet still says 28 and 29 for MC927 / MC928, so the app
+ * flags both until one of the two sources is corrected. */
 const MC9_AREAS = {
   1: 38, 2: 61, 3: 27, 4: 21, 5: 21, 6: 21, 7: 49,
   8: 23, 9: 23, 10: 23, 11: 23, 12: 23, 13: 23, 14: 23, 15: 23, 16: 23, 17: 23,
-  18: 23, 19: 23, 20: 23, 21: 23, 22: 19, 23: 19,
-  24: 80, 25: 45, 26: 19, 27: 28, 28: 29,
+  18: 23, 19: 23, 20: 23, 21: 23, 22: 23, 23: 19,
+  24: 80, 25: 45, 26: 19, 27: 29, 28: 33,
   29: 18, 30: 17, 31: 19, 32: 19, 33: 19, 34: 19, 35: 19, 36: 19, 37: 34,
 };
 
@@ -174,12 +181,12 @@ const MC9_AREAS = {
  * Validated as a set: every outline contains the pin that was placed
  * independently off the drawing, and no two overlap.
  *
- * Clinics 22 and 23 trace about a third larger than the 19 m² printed on the
- * drawing, landing near 25 m². That is not a tracing error — operations have
- * separately said those rooms are 23 m² and that the drawing is wrong (see the
- * README). The traced geometry is now a third, independent piece of evidence
- * that the DRAWING is the thing needing correction. MC9_AREAS still records
- * what the drawing prints, so the sheet cross-check keeps flagging it. */
+ * Clinics 22 and 23 trace near 25 m². Both used to print 19 m²; operations said
+ * 23 m² and that the drawing was wrong, and the outlines agreed. The 2026-10-01
+ * revision corrected 22 to 23 m² but still prints 19 m² for 23, so 23 remains a
+ * known mismatch. Clinic 28 traces near 34.5 m², which backs the revision's
+ * 33 m² over the sheet's 29. MC9_AREAS records what the drawing prints, so the
+ * sheet cross-check keeps flagging any disagreement. */
 const MC9_POLYGONS = {
   // Right-hand column, top to bottom
   1: [[978, 138], [1055, 113], [1038, 201], [967, 183]],
@@ -287,11 +294,11 @@ const PLANS = {
 
     /* Rooms whose traced outline disagrees with the m² printed inside it by
      * more than a quarter. Listed so the test suite guards against a NEW
-     * mismatch appearing without failing on the five already understood.
+     * mismatch appearing without failing on the four already understood.
      *
-     *  22, 23 — trace to about 25 m² against a printed 19 m². Operations have
-     *     already said these rooms are 23 m² and the drawing is wrong, so the
-     *     geometry is a third, independent witness for that.
+     *  23 — traces to about 25 m² against a printed 19 m². Operations have
+     *     already said this room is 23 m² and the drawing is wrong. (22 had the
+     *     same fault; the 2026-10-01 drawing fixed it, so it left this list.)
      *  1, 2, 3 — trace 29-44% SMALLER than their printed 38 / 61 / 27 m². The
      *     outlines follow the drawn walls, so either those three labels are
      *     wrong in the same way, or the rooms extend past what is drawn.
@@ -300,7 +307,7 @@ const PLANS = {
      *     numbers are only ever cross-checked against it.
      *
      * Delete an entry once the drawing is corrected. */
-    areaMismatches: [1, 2, 3, 22, 23],
+    areaMismatches: [1, 2, 3, 23],
     // The 9MC drawing prints no floor name, so floors three to nine share it
     // as-is with nothing to correct.
     floorLabel: null,

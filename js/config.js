@@ -348,8 +348,8 @@ VOOM
      * Empty on purpose. MC922 used to be here, forcing the drawing's 19 m² over
      * the sheet's 23 m². Operations have since confirmed 23 m² is correct and
      * withdrawn the unit, so the override was wrong and has been removed — the
-     * app follows the sheet. Note the drawing still prints 19 m² for clinic 22,
-     * so if that unit ever returns the app will flag the mismatch again. */
+     * app follows the sheet. The 2026-10-01 drawing now prints 23 m² for clinic
+     * 22 too, so the two sources agree if the unit returns. */
     unitOverrides: {},
   },
 ];
