@@ -518,15 +518,51 @@ function renderDetail() {
      selection falls back to the first plan rather than pointing at nothing. */
   if (!CONFIG.plans.some((p) => p.id === state.planId)) state.planId = CONFIG.plans[0].id;
 
+  /* The plans are ONE dropdown (Muhanad, 2026-10-21), not a grid of buttons.
+     Built from buttons rather than a <select>: a phone's native list cannot
+     show the second line of terms or the gold that marks an exclusive offer.
+     Teal stays the colour of "chosen"; gold only says "this is an offer". */
+  const planSub = (p) => (p.cash ? `${pctLabel(p.discount)} discount`
+    : p.remainingDiscount ? offerTerms(p)
+      : `Rest over ${p.years} years, quarterly`);
+  const planFace = (p, tag) => {
+    const face = el('span', 'plansel-face');
+    const name = el('b', null, p.label);
+    if (p.validUntil) name.appendChild(el('em', 'offer-tag', tag));
+    face.appendChild(name);
+    face.appendChild(el('span', null, planSub(p)));
+    return face;
+  };
+  const chosen = CONFIG.plans.find((p) => p.id === state.planId);
+
+  const sel = el('div', 'plansel' + (chosen.validUntil ? ' offer' : ''));
+  const head = el('button', 'plansel-btn');
+  head.type = 'button';
+  head.setAttribute('aria-haspopup', 'listbox');
+  head.setAttribute('aria-expanded', 'false');
+  head.appendChild(el('span', 'plansel-label', 'Payment plan'));
+  head.appendChild(planFace(chosen, 'Offer'));
+  head.appendChild(el('span', 'plansel-chev'));
+  sel.appendChild(head);
+
+  const list = el('div', 'plansel-list');
+  list.setAttribute('role', 'listbox');
   for (const p of CONFIG.plans) {
-    const btn = el('button', 'planbtn' + (state.planId === p.id ? ' on' : '') + (p.validUntil ? ' offer' : ''));
-    btn.appendChild(el('b', null, p.label));
-    btn.appendChild(el('span', null, p.cash ? `${pctLabel(p.discount)} discount`
-      : p.remainingDiscount ? offerTerms(p)
-        : `Rest over ${p.years} years, quarterly`));
-    btn.onclick = () => { state.planId = p.id; renderDetail(); };
-    box.appendChild(btn);
+    const on = p.id === state.planId;
+    const opt = el('button', 'plansel-opt' + (on ? ' on' : '') + (p.validUntil ? ' offer' : ''));
+    opt.type = 'button';
+    opt.setAttribute('role', 'option');
+    opt.setAttribute('aria-selected', on ? 'true' : 'false');
+    opt.appendChild(planFace(p, 'Offer'));
+    opt.onclick = () => { state.planId = p.id; renderDetail(); };
+    list.appendChild(opt);
   }
+  sel.appendChild(list);
+  head.onclick = () => {
+    const open = sel.classList.toggle('open');
+    head.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  box.appendChild(sel);
 
   renderSchedule();
   $('downloadNote').textContent = `${u.code} · ${CONFIG.plans.find((p) => p.id === state.planId).label}`
@@ -945,6 +981,16 @@ for (const b of document.querySelectorAll('[data-post-close]')) b.onclick = clos
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !$('postSheet').classList.contains('hidden')) closePostSheet();
 });
+
+/* The plan dropdown closes on a tap anywhere else, and on Escape. */
+const closePlanMenu = () => {
+  const s = document.querySelector('.plansel.open');
+  if (!s) return;
+  s.classList.remove('open');
+  s.querySelector('.plansel-btn').setAttribute('aria-expanded', 'false');
+};
+document.addEventListener('click', (e) => { if (!e.target.closest('.plansel')) closePlanMenu(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePlanMenu(); });
 $('postModes').onclick = (e) => {
   const b = e.target.closest('button[data-mode]');
   if (!b || b.dataset.mode === postState.mode) return;
