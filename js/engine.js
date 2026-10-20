@@ -4,6 +4,8 @@
  *   - four instalment plans: 10%/7yr, 15%/8yr, 20%/9yr, 25%/10yr
  *   - instalments are QUARTERLY over the plan term
  *   - cash: 35% discount on the unit price
+ *   - exclusive offers (config.js EXCLUSIVE_OFFERS): a down payment, one or
+ *     two later payments, then a discount on what REMAINS, paid quarterly
  *   - maintenance: 10% of the ORIGINAL (pre-discount) price, due one year
  *     before delivery; delivery is 30 months from contract
  *
@@ -168,10 +170,16 @@ function buildSchedule(unit, plan, contractDate = new Date()) {
   const downTotal = downAmounts.reduce((s, n) => s + n, 0);
 
   const remaining = price - downTotal;
+  /* An exclusive offer takes its discount off what is LEFT after the down
+   * payment and the later payments, never off the whole price (Muhanad's
+   * ruling, 2026-10-21). 1,000,000 on 10/10/10 + 10%: 700,000 remains, 70,000
+   * comes off it, 630,000 is spread over the instalments. */
+  const discount = plan.remainingDiscount ? round(remaining * plan.remainingDiscount) : 0;
+  const financed = remaining - discount;
   const count = plan.years * (12 / CONFIG.instalmentEveryMonths);
-  const per = round(remaining / count);
-  // Absorb rounding drift in the last instalment so the rows sum to `price`.
-  const last = remaining - per * (count - 1);
+  const per = round(financed / count);
+  // Absorb rounding drift in the last instalment so the rows sum exactly.
+  const last = financed - per * (count - 1);
 
   downParts.forEach((p, i) => {
     rows.push({
@@ -206,8 +214,12 @@ function buildSchedule(unit, plan, contractDate = new Date()) {
       planLabel: plan.label,
       contractDate,
       originalPrice: price,
-      discount: 0,
-      netPrice: price,
+      discount,
+      discountRate: plan.remainingDiscount || 0,
+      /* What the discount was taken off — printed beside it, so the customer
+       * can see 10% of 700,000 is 70,000 and not wonder why it is not 100,000. */
+      remainingBeforeDiscount: remaining,
+      netPrice: price - discount,
       downPayment: downTotal,
       downParts: downParts.map((p, i) => ({ ...p, amount: downAmounts[i], date: at(p.month) })),
       downPct: plan.down,
@@ -215,7 +227,7 @@ function buildSchedule(unit, plan, contractDate = new Date()) {
       instalmentCount: count,
       years: plan.years,
       maintenance,
-      totalPayable: price + maintenance,
+      totalPayable: price - discount + maintenance,
     },
   };
 }

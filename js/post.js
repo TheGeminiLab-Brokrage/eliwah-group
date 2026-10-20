@@ -48,6 +48,14 @@ const AR_FLOOR = {
  * number read back wrong once it has been copied out of the message. */
 const postNum = (n) => Math.round(n).toLocaleString('en-US');
 
+/** '2026-11-15' -> "15 نوفمبر", the Egyptian month names the flyers' Arabic posts use. */
+const AR_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+const postDay = (ymd) => {
+  const [, m, d] = ymd.split('-').map(Number);
+  return `${iso(d)} ${AR_MONTHS[m - 1]}`;
+};
+
 /**
  * Unicode isolates — LEFT-TO-RIGHT ISOLATE … POP DIRECTIONAL ISOLATE.
  *
@@ -109,6 +117,22 @@ function postUnitBlock(unit, plan, floor) {
        * on top of a price that already has it, and the first person to work it
        * out is the customer. Both numbers, explicitly. */
       lines.push(`💰 كاش ${iso(postNum(summary.netPrice))} جنيه · خصم ${iso(pctLabel(plan.discount))}`);
+    } else if (plan.remainingDiscount) {
+      /* An exclusive offer, line for line as the flyer has it. The discount is
+       * off the REMAINING amount, so the post names that amount: "10% discount"
+       * alone reads as 10% off the price above, which is three times too much. */
+      const parts = summary.downParts;
+      const after = (m) => (m === 12 ? 'بعد سنة' : m === 24 ? 'بعد سنتين' : `بعد ${iso(m / 12)} سنوات`);
+      lines.push(`🔥 عرض حصري حتى ${postDay(plan.validUntil)}`);
+      lines.push(`💰 مقدم ${iso(pctLabel(parts[0].pct))} — ${iso(postNum(parts[0].amount))} جنيه`);
+      for (const p of parts.slice(1)) {
+        lines.push(`➕ ${iso(pctLabel(p.pct))} ${after(p.month)} — ${iso(postNum(p.amount))} جنيه`);
+      }
+      lines.push(`🎁 خصم ${iso(pctLabel(summary.discountRate))} على المبلغ المتبقي`
+        + ` (${iso(postNum(summary.remainingBeforeDiscount))} جنيه) — توفير ${iso(postNum(summary.discount))} جنيه`);
+      lines.push(`السعر بعد الخصم ${iso(postNum(summary.netPrice))} جنيه`);
+      lines.push(`تقسيط ${iso(summary.years)} سنوات`
+        + ` · ${iso(summary.instalmentCount)} قسط ربع سنوي ${iso(postNum(summary.instalmentAmount))} جنيه`);
     } else {
       lines.push(`💰 مقدم ${iso(pctLabel(summary.downPct))}`
         + ` — ${iso(postNum(summary.downPayment))} جنيه`);
@@ -400,6 +424,7 @@ function postFlash(msg, bad) {
 function postLog(delivery) {
   if (typeof logOffer !== 'function') return;
   const plan = CONFIG.plans.find((p) => p.id === state.planId);
+  if (!plan) return;   // an offer that ended while the page was open
   const unit = offerUnit();
   logOffer(offerRow(CONFIG.id, unit, state.picked, plan,
     buildSchedule(unit, plan, state.contractDate).summary, { delivery }));

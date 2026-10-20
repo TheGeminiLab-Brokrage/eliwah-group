@@ -10,7 +10,7 @@ const load = (...files) => {
   const src = files.map((f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8')).join('\n;\n');
   return new Function(`${src}
     return { CONFIG, cfg: () => CONFIG, setProject, addMonths, SNAPSHOTS, parseCSV, normalizeRows, parseUnitCode, parseNumber,
-             buildSchedule, scheduleTotal, combineUnits, listAnd, loadInventory, CLINIC_AREAS, CLINIC_HOTSPOTS, POLYGONS, CLINIC_PINS, PROJECTS, PLANS, floorOrdinal };`)();
+             buildSchedule, scheduleTotal, combineUnits, listAnd, loadInventory, cairoToday, planIsLive, CLINIC_AREAS, CLINIC_HOTSPOTS, POLYGONS, CLINIC_PINS, PROJECTS, PLANS, floorOrdinal };`)();
 };
 
 const G = load('js/config.js', 'js/plan.js', 'js/data.js', 'js/sheet.js', 'js/engine.js');
@@ -417,8 +417,9 @@ check('9MC maintenance falls one year before delivery',
   C9.maintenanceDueMonth === C9.deliveryMonths - 12, `${C9.maintenanceDueMonth} vs ${C9.deliveryMonths - 12}`);
 
 const expected = { dp7: [0.07, 7], dp10: [0.10, 8], dp15: [0.15, 9], dp20: [0.20, 10] };
-// Cash has no down payment or term, so it is checked separately below.
-for (const plan of C9.plans.filter((p) => !p.cash)) {
+// Cash has no down payment or term, so it is checked separately below; the
+// exclusive offers have their own section.
+for (const plan of C9.allPlans.filter((p) => !p.cash && !p.validUntil)) {
   const [pct, years] = expected[plan.id];
   const { rows, summary } = G.buildSchedule(u9, plan, CONTRACT);
   const inst = rows.filter((r) => r.instalment);
@@ -481,6 +482,68 @@ for (const [id, rate] of Object.entries(CASH_RATES)) {
   G.setProject('emc');
 }
 
+/* Exclusive offers, from the client's three flyers (2026-10-21). Every figure
+ * below is worked by hand on a 1,000,000 unit — the first row is Muhanad's own
+ * example — so a change to the engine cannot quietly agree with itself.
+ * The discount is off what REMAINS after the down payment and later payments. */
+console.log('\nExclusive offers');
+const OFFERS = {
+  //          parts [amount, month]                          discount  per quarter  net      last day
+  offer10: { parts: [[100000, 0], [100000, 12], [100000, 24]], off: 70000,  per: 15750, net: 930000, ends: '2026-11-15' },
+  offer15: { parts: [[150000, 0], [150000, 12]],               off: 140000, per: 14000, net: 860000, ends: '2026-11-15' },
+  offer20: { parts: [[200000, 0], [200000, 12]],               off: 180000, per: 10500, net: 820000, ends: '2026-10-31' },
+};
+for (const id of ['emc', 'mc9']) {
+  G.setProject(id);
+  const C = G.cfg();
+  for (const [pid, want] of Object.entries(OFFERS)) {
+    const plan = C.allPlans.find((p) => p.id === pid);
+    check(`${id}: has the ${pid} offer`, !!plan);
+    if (!plan) continue;
+    const { rows, summary } = G.buildSchedule({ price: 1000000 }, plan, CONTRACT);
+    const down = rows.filter((r) => r.down);
+    const inst = rows.filter((r) => r.instalment);
+    check(`${id}/${pid}: payments before the instalments`,
+      JSON.stringify(down.map((r) => [r.amount, r.month])) === JSON.stringify(want.parts),
+      JSON.stringify(down.map((r) => [r.amount, r.month])));
+    check(`${id}/${pid}: discount ${want.off}`, summary.discount === want.off, `got ${summary.discount}`);
+    check(`${id}/${pid}: 40 quarterly instalments`, inst.length === 40, `got ${inst.length}`);
+    check(`${id}/${pid}: every instalment ${want.per}`, inst.every((r) => r.amount === want.per),
+      [...new Set(inst.map((r) => r.amount))].join(','));
+    check(`${id}/${pid}: price after offer ${want.net}`, summary.netPrice === want.net, `got ${summary.netPrice}`);
+    check(`${id}/${pid}: maintenance on the ORIGINAL price`, summary.maintenance === 100000);
+    check(`${id}/${pid}: maintenance at the project's usual month`,
+      rows.some((r) => r.month === C.maintenanceDueMonth && r.label.startsWith('Maintenance')));
+    check(`${id}/${pid}: rows sum to total payable`, G.scheduleTotal(rows) === want.net + 100000,
+      `${G.scheduleTotal(rows)}`);
+    check(`${id}/${pid}: year-two payment dated two years on`,
+      down.every((r) => r.date.getTime() === G.addMonths(CONTRACT, r.month).getTime()));
+    check(`${id}/${pid}: last day ${want.ends}`, plan.validUntil === want.ends);
+    check(`${id}/${pid}: offered on its last day`, G.planIsLive(plan, want.ends));
+    const dayAfter = new Date(Date.parse(want.ends + 'T12:00:00Z') + 864e5).toISOString().slice(0, 10);
+    check(`${id}/${pid}: gone the day after (${dayAfter})`, !G.planIsLive(plan, dayAfter));
+  }
+  check(`${id}: ordinary plans never expire`,
+    C.allPlans.filter((p) => !p.validUntil).every((p) => G.planIsLive(p, '2099-01-01')));
+}
+G.setProject('emc');
+/* Cairo midnight, not the phone's. In November Cairo is UTC+2. */
+check('Cairo day: 23:59 on 15 Nov is still the 15th',
+  G.cairoToday(new Date('2026-11-15T21:59:00Z')) === '2026-11-15', G.cairoToday(new Date('2026-11-15T21:59:00Z')));
+check('Cairo day: 00:00 on 16 Nov is the 16th',
+  G.cairoToday(new Date('2026-11-15T22:00:00Z')) === '2026-11-16', G.cairoToday(new Date('2026-11-15T22:00:00Z')));
+check('Cairo day: 31 Oct ends at Cairo midnight',
+  G.cairoToday(new Date('2026-10-31T21:59:00Z')) === '2026-10-31'
+  && G.cairoToday(new Date('2026-10-31T22:00:00Z')) === '2026-11-01');
+/* The plan list the app shows on a given day. */
+{
+  const emc = G.PROJECTS.find((p) => p.id === 'emc');
+  const on = (day) => emc.allPlans.filter((p) => G.planIsLive(p, day)).map((p) => p.id).join(',');
+  check('21 Oct: all three offers offered', on('2026-10-21') === 'dp10,dp15,dp20,dp25,offer10,offer15,offer20,cash', on('2026-10-21'));
+  check('1 Nov: the gold 20% offer has gone', on('2026-11-01') === 'dp10,dp15,dp20,dp25,offer10,offer15,cash', on('2026-11-01'));
+  check('16 Nov: back to the standard plans', on('2026-11-16') === 'dp10,dp15,dp20,dp25,cash', on('2026-11-16'));
+}
+
 console.log('\nDate handling');
 check('month-end clamps (31 Jan + 1 month -> 28 Feb 2027)',
   G.addMonths(new Date(2027, 0, 31), 1).getTime() === new Date(2027, 1, 28).getTime());
@@ -529,8 +592,11 @@ for (const unit of units) {
       const instalments = rows.filter((r) => r.instalment);
       check(`${unit.code} / ${plan.id}: ${plan.years * 4} quarterly instalments`,
         instalments.length === plan.years * 4, `got ${instalments.length}`);
-      check(`${unit.code} / ${plan.id}: down + instalments = price`,
-        summary.downPayment + instalments.reduce((s, r) => s + r.amount, 0) === unit.price);
+      /* An exclusive offer pays less than the price by its discount on the
+         remaining amount, worked out here from the plan, not read back. */
+      const offOffer = Math.round((unit.price - summary.downPayment) * (plan.remainingDiscount || 0));
+      check(`${unit.code} / ${plan.id}: down + instalments = price less any offer discount`,
+        summary.downPayment + instalments.reduce((s, r) => s + r.amount, 0) === unit.price - offOffer);
       check(`${unit.code} / ${plan.id}: last instalment absorbs rounding`,
         Math.abs(instalments.at(-1).amount - summary.instalmentAmount) < instalments.length);
       check(`${unit.code} / ${plan.id}: instalments every 3 months`,
@@ -621,7 +687,8 @@ for (const p of G.CONFIG.plans) {
   if (!p.cash) {
     const inst = rows.filter((r) => r.instalment);
     check(`combined / ${p.id}: down + instalments = combined price`,
-      summary.downPayment + inst.reduce((s, r) => s + r.amount, 0) === pair.price);
+      summary.downPayment + inst.reduce((s, r) => s + r.amount, 0)
+        === pair.price - Math.round((pair.price - summary.downPayment) * (p.remainingDiscount || 0)));
     check(`combined / ${p.id}: ${p.years * 4} quarterly instalments`,
       inst.length === p.years * 4);
   }

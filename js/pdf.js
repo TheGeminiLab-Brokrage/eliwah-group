@@ -520,7 +520,8 @@ async function buildOfferPDF(selection, plan, floor, contractDate = new Date()) 
   doc.setFont('helvetica', 'normal').setFontSize(9);
   setText(doc, [255, 255, 255]);
   doc.text(plan.cash ? 'PRICE AFTER CASH DISCOUNT'
-    : unit.combined ? 'TOTAL COMBINED PRICE' : 'TOTAL UNIT PRICE', bx + 10, y + 2);
+    : plan.remainingDiscount ? 'PRICE AFTER OFFER DISCOUNT'
+      : unit.combined ? 'TOTAL COMBINED PRICE' : 'TOTAL UNIT PRICE', bx + 10, y + 2);
   doc.setFont('helvetica', 'bold').setFontSize(22);
   const headline = fmt(summary.netPrice);
   doc.text(headline, bx + 10, y + 15);
@@ -536,6 +537,8 @@ async function buildOfferPDF(selection, plan, floor, contractDate = new Date()) 
    * total that does not foot is the fastest way to lose a customer's trust. */
   doc.text(plan.cash
     ? `${pctLabel(plan.discount)} discount on ${fmt(summary.originalPrice)} ${CONFIG.currency}`
+    : plan.remainingDiscount
+      ? `Saves ${fmt(summary.discount)} on ${fmt(summary.originalPrice)} ${CONFIG.currency}`
     : unit.combined
       ? `${unit.count} clinics  ·  ${unit.area} m² combined`
       : `${unit.area} m² × ${fmt(unit.meterPrice || 0)} ${CONFIG.currency}/m²`, bx + 10, y + 24);
@@ -547,7 +550,17 @@ async function buildOfferPDF(selection, plan, floor, contractDate = new Date()) 
   setText(doc, BRAND_DARK);
   doc.text(`Selected plan — ${plan.label}`, M, y);
   y += 8;
-  const strip = plan.cash
+  /* An exclusive offer lists each payment the flyer names, on its own: the down
+   * payment, the payment after one year (and two), then the discount. */
+  const strip = plan.remainingDiscount
+    ? [...summary.downParts.map((p) => [p.month === 0 ? 'Down payment'
+          : `After ${p.month / 12} year${p.month === 12 ? '' : 's'}`, fmtMoney(p.amount)]),
+       /* A plain hyphen: the PDF's built-in Helvetica has no U+2212 minus. */
+       [`${pctLabel(summary.discountRate)} off the remaining`, '-' + fmtMoney(summary.discount)],
+       [`Quarterly x ${summary.instalmentCount}`, fmtMoney(summary.instalmentAmount)],
+       ['Maintenance (10%)', fmtMoney(summary.maintenance)],
+       ['Total payable', fmtMoney(summary.totalPayable)]]
+    : plan.cash
     ? [['Cash payment', fmtMoney(summary.netPrice)], ['Maintenance (10%)', fmtMoney(summary.maintenance)], ['Total payable', fmtMoney(summary.totalPayable)]]
     : [['Down payment', fmtMoney(summary.downPayment)],
        [`${summary.instalmentCount} quarterly instalments`, fmtMoney(summary.instalmentAmount)],
@@ -573,7 +586,24 @@ async function buildOfferPDF(selection, plan, floor, contractDate = new Date()) 
 
   /* Headline figures first, then the detail — the same order as the app, and
    * the order a customer asks the questions in. */
-  const cards = plan.cash
+  const cards = plan.remainingDiscount
+    ? [['PRICE AFTER OFFER', fmt(summary.netPrice),
+        `saves ${fmt(summary.discount)} · ${pctLabel(summary.discountRate)} off the remaining`],
+       ['DOWN PAYMENT', fmt(summary.downParts[0].amount),
+        /* "+ 492,000 at years 1 & 2" when the later payments match, which keeps
+           the line inside the card; otherwise each one is named. */
+        (() => {
+          const later = summary.downParts.slice(1);
+          return new Set(later.map((p) => p.amount)).size === 1
+            ? `on contract + ${fmt(later[0].amount)} at year${later.length > 1 ? 's' : ''} `
+              + later.map((p) => p.month / 12).join(' & ')
+            : `on contract + ${later.map((p) => `${fmt(p.amount)} at year ${p.month / 12}`).join(', ')}`;
+        })()],
+       ['QUARTERLY INSTALMENT', fmt(summary.instalmentAmount),
+        `${summary.instalmentCount} payments over ${summary.years} years`],
+       ['TOTAL PAYABLE', fmt(summary.totalPayable),
+        `incl. ${pctLabel(CONFIG.maintenanceRate)} maintenance`, true]]
+    : plan.cash
     ? [['CASH PRICE', fmt(summary.netPrice), `after ${pctLabel(plan.discount)} discount`],
        ['YOU SAVE', fmt(summary.discount), `off ${fmt(summary.originalPrice)}`],
        ['MAINTENANCE', fmt(summary.maintenance), `${pctLabel(CONFIG.maintenanceRate)} of the unit price`],
@@ -742,6 +772,12 @@ async function buildOfferPDF(selection, plan, floor, contractDate = new Date()) 
     `Instalments are payable quarterly, beginning three months after the contract date of ${fmtDate(contractDate)}.`,
     plan.cash
       ? `The cash price reflects a ${pctLabel(plan.discount)} discount on the original unit price. Maintenance is calculated on the original price.`
+      : plan.remainingDiscount
+      ? `Exclusive offer: ${plan.blurb}. The ${pctLabel(plan.remainingDiscount)} discount applies only to the `
+        + `${fmt(summary.remainingBeforeDiscount)} ${CONFIG.currency} remaining after the down payment and the later `
+        + `payment${summary.downParts.length > 2 ? 's' : ''}, and saves ${fmt(summary.discount)} ${CONFIG.currency}. `
+        + `Maintenance is calculated on the original price. The offer is available until the end of `
+        + `${new Date(...plan.validUntil.split('-').map((n, i) => (i === 1 ? n - 1 : +n))).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.`
       : (plan.blurb
         ? `This plan is ${plan.blurb}.`
         : `This plan is ${pctLabel(plan.down)} down payment with the balance over ${plan.years} years.`),

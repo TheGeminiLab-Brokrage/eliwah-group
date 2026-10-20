@@ -156,6 +156,10 @@ const afford = (function () {
       maintenance: s.maintenance,
       maintenanceMonth: CONFIG.maintenanceDueMonth,
       price: unit.price,
+      /* An exclusive offer's saving, so the card can quote the price the
+         customer actually pays rather than the list price. */
+      discount: s.discount,
+      netPrice: s.netPrice,
     };
   }
 
@@ -341,7 +345,9 @@ const afford = (function () {
     const facts = el('div', 'facts');
     const fact = (html) => { const s = el('span'); s.innerHTML = html; facts.appendChild(s); };
     if (u.area) fact(`<b>${area(u.area)}</b> m²`);
-    fact(`Price <b>${group(c.price)}</b> ${CONFIG.currency}`);
+    fact(c.discount
+      ? `Price <b>${group(c.netPrice)}</b> ${CONFIG.currency} after the offer discount (list ${group(c.price)})`
+      : `Price <b>${group(c.price)}</b> ${CONFIG.currency}`);
     /* Spell the split out beside the plan name. The plan is CALLED "20% Down
        Payment" but the figure above it reads "down now · 10%", and the two look
        like a contradiction until you know the 20% arrives in two halves. The
@@ -382,24 +388,29 @@ const afford = (function () {
        explain why one plan looks cheaper than another. A second down payment is
        a variable, and on 9MC it is the entire reason the 20% plan shows the
        lowest instalment in the project. It gets its own line, above. */
-    for (const d of c.downLater) {
+    /* The exclusive 10/10/10 offer has TWO later payments. The cash they entered
+       pays the down payment first, then each later payment in turn, so the
+       second is checked against what the first left over — not against the
+       same leftover twice. */
+    let leftOver = S.down - c.down;
+    const ORDINAL = ['Second', 'Third', 'Fourth'];
+    c.downLater.forEach((d, i) => {
       const line = el('div', 'second');
-      line.appendChild(el('b', null, `Second payment ${group(d.amount)} ${CONFIG.currency}`));
+      line.appendChild(el('b', null, `${ORDINAL[i] || 'Later'} payment ${group(d.amount)} ${CONFIG.currency}`));
       line.appendChild(document.createTextNode(` due at month ${d.month}, on top of the instalments.`));
 
-      /* Only warn when it is actually a risk. The cash they entered pays the
-         down payment first; what is left is what they have towards this. Most
-         customers fund it out of income over the year, so a blanket warning
-         would be noise — this one fires only when the gap is real. */
-      const leftOver = S.down - c.down;
+      /* Only warn when it is actually a risk. Most customers fund it out of
+         income over the year, so a blanket warning would be noise — this one
+         fires only when the gap is real. */
       if (d.amount > leftOver) {
         line.classList.add('risk');
         line.appendChild(el('span', 'gap',
           `Their cash covers ${group(Math.max(leftOver, 0))} of it — check they can find `
-          + `${group(d.amount - Math.max(leftOver, 0))} more within the year.`));
+          + `${group(d.amount - Math.max(leftOver, 0))} more by month ${d.month}.`));
       }
+      leftOver -= d.amount;
       n.appendChild(line);
-    }
+    });
 
     n.appendChild(el('div', 'spike',
       `Also due: maintenance ${group(c.maintenance)} ${CONFIG.currency} at month ${c.maintenanceMonth}.`));

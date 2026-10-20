@@ -514,10 +514,16 @@ function renderDetail() {
   if (SHARE_FILES) $('share').classList.remove('hidden');
   $('postBtn').classList.toggle('hidden', !CONFIG.post);
 
+  /* An offer that ended while the page was open is gone from the list, so the
+     selection falls back to the first plan rather than pointing at nothing. */
+  if (!CONFIG.plans.some((p) => p.id === state.planId)) state.planId = CONFIG.plans[0].id;
+
   for (const p of CONFIG.plans) {
-    const btn = el('button', 'planbtn' + (state.planId === p.id ? ' on' : ''));
+    const btn = el('button', 'planbtn' + (state.planId === p.id ? ' on' : '') + (p.validUntil ? ' offer' : ''));
     btn.appendChild(el('b', null, p.label));
-    btn.appendChild(el('span', null, p.cash ? `${pctLabel(p.discount)} discount` : `Rest over ${p.years} years, quarterly`));
+    btn.appendChild(el('span', null, p.cash ? `${pctLabel(p.discount)} discount`
+      : p.remainingDiscount ? offerTerms(p)
+        : `Rest over ${p.years} years, quarterly`));
     btn.onclick = () => { state.planId = p.id; renderDetail(); };
     box.appendChild(btn);
   }
@@ -527,6 +533,23 @@ function renderDetail() {
     + (u.combined ? ` · ${u.count} clinics combined` : '');
 }
 
+/** "15 Nov" — the last day of an offer, as the flyers write it. */
+const offerEnds = (plan) => {
+  const [y, m, d] = plan.validUntil.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+};
+
+/** "15% after 1 year · 20% off the rest · until 15 Nov" — an offer's terms on one line. */
+function offerTerms(plan) {
+  const later = plan.downSchedule.filter((p) => p.month > 0)
+    .map((p) => `${pctLabel(p.pct)} after ${p.month / 12} year${p.month === 12 ? '' : 's'}`);
+  return [...later, `${pctLabel(plan.remainingDiscount)} off the rest`, `until ${offerEnds(plan)}`].join(' · ');
+}
+
+/** "100,000 at year 1 and 100,000 at year 2" — the payments after the down payment. */
+const laterPayments = (summary) => summary.downParts.filter((p) => p.month > 0)
+  .map((p) => `${fmt(p.amount)} at year ${p.month / 12}`).join(' and ');
+
 /** The four headline numbers above the schedule — what the customer asks first. */
 function renderScheduleCards(plan, summary) {
   const box = $('schedCards');
@@ -534,7 +557,19 @@ function renderScheduleCards(plan, summary) {
   const o = offerUnit();
   const sizeNote = o.combined ? `${o.area} m² · ${o.count} clinics` : `${o.area} m² clinic`;
 
-  const cards = plan.cash
+  /* An exclusive offer, in the flyer's own terms: the down payment is what is
+     paid on contract, and the later payments are named beside it — not summed
+     into one "down payment" the flyer never calls it. */
+  const onContract = (s) => s.downParts.filter((p) => p.month === 0).reduce((t, p) => t + p.amount, 0);
+  const cards = plan.remainingDiscount
+    ? [['Price after offer', fmt(summary.netPrice),
+        `saves ${fmt(summary.discount)} · ${pctLabel(summary.discountRate)} off the remaining ${fmt(summary.remainingBeforeDiscount)}`],
+       ['Down payment', fmt(onContract(summary)), `on contract, then ${laterPayments(summary)}`],
+       ['Quarterly instalment', fmt(summary.instalmentAmount),
+        `${summary.instalmentCount} payments over ${summary.years} years`],
+       ['Total payable', fmt(summary.totalPayable),
+        `including ${pctLabel(CONFIG.maintenanceRate)} maintenance`, true]]
+    : plan.cash
     ? [['Cash price', fmt(summary.netPrice), `after ${pctLabel(plan.discount)} discount`],
        ['You save', fmt(summary.discount), `off ${fmt(summary.originalPrice)} ${CONFIG.currency}`],
        ['Maintenance', fmt(summary.maintenance), `${pctLabel(CONFIG.maintenanceRate)} of the unit price`],
@@ -623,8 +658,10 @@ function renderSchedule() {
   if (summary.discount) {
     const tr = el('tr');
     tr.appendChild(el('td', 'yr', '—'));
-    tr.appendChild(el('td', null, 'Cash discount applied'));
-    tr.appendChild(el('td', null, `${pctLabel(plan.discount)} off ${fmt(summary.originalPrice)}`));
+    tr.appendChild(el('td', null, plan.cash ? 'Cash discount applied' : 'Offer discount applied'));
+    tr.appendChild(el('td', null, plan.cash
+      ? `${pctLabel(plan.discount)} off ${fmt(summary.originalPrice)}`
+      : `${pctLabel(summary.discountRate)} off the remaining ${fmt(summary.remainingBeforeDiscount)}`));
     tr.appendChild(el('td', 'num', '−' + fmt(summary.discount)));
     tr.appendChild(el('td', 'num pct', ''));
     tr.appendChild(el('td', 'num', ''));
@@ -850,6 +887,12 @@ const SHARE_FILES = typeof canShareFiles === 'function' && canShareFiles();
 
 async function issueOffer(share) {
   const plan = CONFIG.plans.find((p) => p.id === state.planId);
+  /* The page was left open past an offer's last day. Never send it. */
+  if (!plan) {
+    alert('This offer has ended. Please choose another payment plan.');
+    renderDetail();
+    return;
+  }
   const floor = CONFIG.floors.find((f) => f.key === state.floorKey);
   const buttons = [$('share'), $('download')];
   const labels = buttons.map((b) => b.textContent);

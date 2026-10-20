@@ -37,7 +37,7 @@ const GLOBAL = {
   telemetry: {
     url: 'https://ctlavvvxchusvqxbcmac.supabase.co/rest/v1/offer_events',
     key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bGF2dnZ4Y2h1c3ZxeGJjbWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMDE1MTYsImV4cCI6MjEwMjY3NzUxNn0.UsyG7D8LRh0Abno0k7QfrZ96MqjJM6FvMj8jeB8Q_c4',
-    version: 'eliwah-offers-v9',  // set to the sw.js cache name on each deploy
+    version: 'eliwah-offers-v12',  // set to the sw.js cache name on each deploy
   },
 };
 
@@ -59,6 +59,71 @@ const repeatedFloors = (keys, plan, use = 'Medical') => keys.map((key) => ({
   plan,
   released: false,
 }));
+
+/* ------------------------------------------------------ exclusive offers --
+ * Eliwah Group's promotions, from the client's three flyers (received
+ * 2026-10-21). They run on BOTH projects.
+ *
+ * HOW THE DISCOUNT WORKS — Muhanad's ruling, 2026-10-21. It comes off the amount
+ * REMAINING after the down payment and the year-one / year-two payments, never
+ * off the whole price. A 1,000,000 unit on the 10/10/10/10 offer:
+ *   100,000 down, 100,000 after one year, 100,000 after two years
+ *   10% off the remaining 700,000 = 70,000 saved
+ *   the other 630,000 over 10 years, quarterly: 40 x 15,750
+ * The down payment and the later payments are shares of the FULL price. The
+ * gold flyer says only "30% discount"; he confirmed it is also off the remaining.
+ *
+ * Each offer leaves the app by itself after `validUntil` (its last day,
+ * inclusive), Cairo time, so an expired offer can never be sent. To extend one,
+ * change the date. To add one, copy a block.
+ *
+ * ASSUMED, not on the flyers: maintenance is the project's usual rate on the
+ * ORIGINAL (pre-discount) price, at the usual date — the same as the cash plan.
+ */
+const EXCLUSIVE_OFFERS = [
+  { id: 'offer10', label: 'Exclusive Offer · 10% Down', down: 0.30, years: 10,
+    remainingDiscount: 0.10, validUntil: '2026-11-15',
+    downSchedule: [
+      { pct: 0.10, month: 0,  label: 'Down payment (10%)' },
+      { pct: 0.10, month: 12, label: 'After one year (10%)' },
+      { pct: 0.10, month: 24, label: 'After two years (10%)' },
+    ],
+    blurb: '10% down payment, 10% after one year and 10% after two years, then a 10% discount on the remaining amount, which is paid quarterly over 10 years' },
+  { id: 'offer15', label: 'Exclusive Offer · 15% Down', down: 0.30, years: 10,
+    remainingDiscount: 0.20, validUntil: '2026-11-15',
+    downSchedule: [
+      { pct: 0.15, month: 0,  label: 'Down payment (15%)' },
+      { pct: 0.15, month: 12, label: 'After one year (15%)' },
+    ],
+    blurb: '15% down payment and 15% after one year, then a 20% discount on the remaining amount, which is paid quarterly over 10 years' },
+  { id: 'offer20', label: 'Exclusive Offer · 20% Down', down: 0.40, years: 10,
+    remainingDiscount: 0.30, validUntil: '2026-10-31',
+    downSchedule: [
+      { pct: 0.20, month: 0,  label: 'Down payment (20%)' },
+      { pct: 0.20, month: 12, label: 'After one year (20%)' },
+    ],
+    blurb: '20% down payment and 20% after one year, then a 30% discount on the remaining amount, which is paid quarterly over 10 years' },
+];
+
+/**
+ * Today's date in Cairo, as 'YYYY-MM-DD'. An offer ends at Cairo midnight
+ * whatever zone the agent's phone is set to.
+ *
+ * If the phone cannot give Cairo time, assume the latest Cairo can be (UTC+3)
+ * so an offer ends a little early rather than running past its date.
+ */
+function cairoToday(now = new Date()) {
+  try {
+    const s = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(now);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  } catch (e) { /* fall through */ }
+  return new Date(now.getTime() + 3 * 3600e3).toISOString().slice(0, 10);
+}
+
+/** A plan with no end date is always live; an offer is live up to and including its last day. */
+const planIsLive = (plan, today = cairoToday()) => !plan.validUntil || today <= plan.validUntil;
 
 const PROJECTS = [
   {
@@ -174,13 +239,17 @@ VOOM
     maintenanceDueMonth: 18,          // one year before delivery
     instalmentEveryMonths: 3,         // quarterly
 
-    plans: [
+    /* Every plan, expired offers included. The app reads `plans`, below, which
+     * drops an offer the day after it ends. */
+    allPlans: [
       { id: 'dp10', label: '10% Down Payment', down: 0.10, years: 7 },
       { id: 'dp15', label: '15% Down Payment', down: 0.15, years: 8 },
       { id: 'dp20', label: '20% Down Payment', down: 0.20, years: 9 },
       { id: 'dp25', label: '25% Down Payment', down: 0.25, years: 10 },
+      ...EXCLUSIVE_OFFERS,
       { id: 'cash', label: 'Cash', cash: true, discount: 0.25 },
     ],
+    get plans() { return this.allPlans.filter((p) => planIsLive(p)); },
   },
 
   {
@@ -317,7 +386,9 @@ VOOM
     maintenanceDueMonth: 30,          // one year before delivery
     instalmentEveryMonths: 3,
 
-    plans: [
+    /* Every plan, expired offers included. The app reads `plans`, below, which
+     * drops an offer the day after it ends. */
+    allPlans: [
       { id: 'dp7',  label: '7% Down Payment',  down: 0.07, years: 7 },
       { id: 'dp10', label: '10% Down Payment', down: 0.10, years: 8 },
       { id: 'dp15', label: '15% Down Payment', down: 0.15, years: 9 },
@@ -328,8 +399,10 @@ VOOM
           { pct: 0.10, month: 12, label: 'Second payment (10%)' },
         ],
         blurb: '10% on contract + 10% after one year, rest over 10 years' },
+      ...EXCLUSIVE_OFFERS,
       { id: 'cash', label: 'Cash', cash: true, discount: 0.30 },
     ],
+    get plans() { return this.allPlans.filter((p) => planIsLive(p)); },
 
     /* Units withheld from sale regardless of what the sheet says. They still
      * show on the plan (greyed, with the reason) so nobody wonders where they
@@ -362,4 +435,4 @@ function setProject(id) {
   return CONFIG;
 }
 
-if (typeof module !== 'undefined') module.exports = { CONFIG, PROJECTS, setProject };
+if (typeof module !== 'undefined') module.exports = { CONFIG, PROJECTS, setProject, cairoToday, planIsLive };
