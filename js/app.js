@@ -332,6 +332,21 @@ function showPop(unit, pin) {
   pop.style.top = `${top * 100}%`;
   pop.classList.toggle('below', top < 0.32);   // flip under the pin near the top edge
   pop.classList.add('show');
+
+  /* Phone: the plan is barely wider than the card, so the card may run past
+     the plan onto the page (styles.css lets it), but never past the screen.
+     Slide it sideways to stay on screen, keeping its arrow on the room, and
+     open it below the room when there is no room above it on screen. */
+  pop.style.setProperty('--nudge', '0px');
+  if (window.matchMedia('(max-width: 560px)').matches) {
+    const r = pop.getBoundingClientRect();
+    if (!pop.classList.contains('below') && r.top < 8) {
+      pop.classList.add('below');
+    }
+    const r2 = pop.getBoundingClientRect();
+    const nudge = r2.left < 8 ? 8 - r2.left : r2.right > innerWidth - 8 ? innerWidth - 8 - r2.right : 0;
+    pop.style.setProperty('--nudge', `${Math.round(nudge)}px`);
+  }
 }
 
 function schedulePopHide() {
@@ -644,8 +659,10 @@ function renderSchedule() {
 
   const thead = el('thead');
   const hr = el('tr');
-  for (const [label, cls] of [['Year'], ['Installment'], ['Date'], [`Amount (${CONFIG.currency})`, 'num'],
-    ['%', 'num'], ['Yearly %', 'num']]) {
+  /* c-yr / c-pct / c-ypct mark the three columns a phone drops, so payment,
+     date and amount fit the screen without a sideways swipe. */
+  for (const [label, cls] of [['Year', 'c-yr'], ['Installment'], ['Date'], [`Amount (${CONFIG.currency})`, 'num'],
+    ['%', 'num c-pct'], ['Yearly %', 'num c-ypct']]) {
     hr.appendChild(el('th', cls, label));
   }
   thead.appendChild(hr);
@@ -668,13 +685,13 @@ function renderSchedule() {
         tr.appendChild(yr);
       }
 
-      const first = el('td', null, r.label);
+      const first = el('td', r.instalment ? 'c-inst' : null, r.label);
       if (r.note) first.appendChild(el('small', 'note', ` — ${r.note}`));
       tr.appendChild(first);
       /* Real calendar dates off the contract date, with the relative point
        * alongside. Both stay on one line: a 43-row schedule that wraps every
        * date onto two lines turns into a page of scrolling. */
-      const due = el('td');
+      const due = el('td', 'c-date');
       due.appendChild(el('span', null, fmtDate(r.date)));
       due.appendChild(el('small', 'note', ` · ${r.when}`));
       tr.appendChild(due);
@@ -700,17 +717,20 @@ function renderSchedule() {
       : `${pctLabel(summary.discountRate)} off the remaining ${fmt(summary.remainingBeforeDiscount)}`));
     tr.appendChild(el('td', 'num', '−' + fmt(summary.discount)));
     tr.appendChild(el('td', 'num pct', ''));
-    tr.appendChild(el('td', 'num', ''));
+    tr.appendChild(el('td', 'num c-ypct', ''));
     tb.appendChild(tr);
   }
 
+  /* The Year cell is its own (empty) cell rather than part of a 3-wide label,
+     so when a phone drops the Year column the total still sits under Amount. */
   const tr = el('tr', 'total');
+  tr.appendChild(el('td', 'c-yr', ''));
   const label = el('td', null, 'Total payable');
-  label.colSpan = 3;
+  label.colSpan = 2;
   tr.appendChild(label);
   tr.appendChild(el('td', 'num', fmt(summary.totalPayable)));
   tr.appendChild(el('td', 'num pct', fmtPct((summary.totalPayable / summary.originalPrice) * 100)));
-  tr.appendChild(el('td', 'num', ''));
+  tr.appendChild(el('td', 'num c-ypct', ''));
   tb.appendChild(tr);
 
   t.appendChild(tb);
