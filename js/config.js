@@ -77,8 +77,9 @@ const repeatedFloors = (keys, plan, use = 'Medical') => keys.map((key) => ({
  * inclusive), Cairo time, so an expired offer can never be sent. To extend one,
  * change the date. To add one, copy a block.
  *
- * ASSUMED, not on the flyers: maintenance is the project's usual rate on the
- * ORIGINAL (pre-discount) price, at the usual date — the same as the cash plan.
+ * Maintenance on the offers is 10% of the ORIGINAL (pre-discount) price, at the
+ * project's usual date — the same as the cash plan. Not on the flyers; confirmed
+ * by Muhanad with the client, 2026-10-21.
  */
 const EXCLUSIVE_OFFERS = [
   { id: 'offer10', label: 'Exclusive Offer · 10% Down', down: 0.30, years: 10,
